@@ -8,18 +8,16 @@ function embaralhar(array) {
     return array;
 }
 
-async function criarEstadoInicialDoJogo(db, jogador1Id, deckId1, jogador2Id, deckId2) {
+async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
     console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
     
-    const USER_ID_TESTE = 'usuario_teste_01'; 
-    
-    const deck1Ref = db.collection('usuarios', USER_ID_TESTE, 'baralhos').doc(deckId1);
-    const deck2Ref = db.collection('usuarios', USER_ID_TESTE, 'baralhos').doc(deckId2);
+    const deck1Ref = db.collection('usuarios', userId1, 'baralhos').doc(deckId1);
+    const deck2Ref = db.collection('usuarios', userId2, 'baralhos').doc(deckId2);
     
     const [doc1, doc2] = await Promise.all([deck1Ref.get(), deck2Ref.get()]);
 
-    if (!doc1.exists) throw new Error(`❌ Baralho '${deckId1}' do Jogador 1 não encontrado no Firestore!`);
-    if (!doc2.exists) throw new Error(`❌ Baralho '${deckId2}' do Jogador 2 não encontrado no Firestore!`);
+    if (!doc1.exists()) throw new Error(`❌ Baralho '${deckId1}' do Jogador 1 não encontrado!`);
+    if (!doc2.exists()) throw new Error(`❌ Baralho '${deckId2}' do Jogador 2 não encontrado!`);
 
     const deckIds1 = doc1.data().cartas;
     const deckIds2 = doc2.data().cartas;
