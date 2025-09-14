@@ -1,7 +1,6 @@
-const admin = require('firebase-admin');
+const { FieldPath } = require('@google-cloud/firestore');
 
-// Remova a linha 'const mockDeck = require(...);' se ela ainda existir.
-
+// Embaralhador de arrays
 function embaralhar(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -10,25 +9,27 @@ function embaralhar(array) {
     return array;
 }
 
-// CORRIGIDO: A função agora aceita 'db' como o primeiro parâmetro.
-async function criarEstadoInicialDoJogo(db, jogador1Id, jogador2Id) {
-    console.log("Buscando baralhos do Firestore...");
+async function criarEstadoInicialDoJogo(db, jogador1Id, deckId1, jogador2Id, deckId2) {
+    console.log("📡 Buscando baralhos do Firestore...");
 
+    // Aqui está hardcoded o deck. Você pode substituir por deckId1 futuramente.
     const deckReceitaRef = db.collection('baralhos').doc('usuario_teste_01');
     const doc = await deckReceitaRef.get();
 
     if (!doc.exists) {
-        throw new Error("Baralho 'usuario_teste_01' não encontrado no Firestore!");
+        throw new Error("❌ Baralho 'usuario_teste_01' não encontrado no Firestore!");
     }
 
     const deckIds = doc.data().cartas;
 
     if (!deckIds || deckIds.length === 0) {
-        throw new Error("O baralho encontrado está vazio ou não tem a propriedade 'cartas'.");
+        throw new Error("❌ O baralho encontrado está vazio ou não tem a propriedade 'cartas'.");
     }
 
     const cartasRef = db.collection('cartas_mestras');
-    const snapshot = await cartasRef.where(admin.firestore.FieldPath.documentId(), 'in', deckIds).get();
+    const snapshot = await cartasRef
+        .where(FieldPath.documentId(), 'in', deckIds)
+        .get();
 
     const dadosCompletosCartas = {};
     snapshot.forEach(doc => {
@@ -37,7 +38,7 @@ async function criarEstadoInicialDoJogo(db, jogador1Id, jogador2Id) {
 
     const baralhoCompleto = deckIds.map(id => dadosCompletosCartas[id]);
 
-    console.log(`Baralho com ${baralhoCompleto.length} cartas carregado.`);
+    console.log(`✅ Baralho com ${baralhoCompleto.length} cartas carregado.`);
 
     const baralhoJogador1 = embaralhar([...baralhoCompleto]);
     const baralhoJogador2 = embaralhar([...baralhoCompleto]);
@@ -46,12 +47,31 @@ async function criarEstadoInicialDoJogo(db, jogador1Id, jogador2Id) {
 
     return {
         jogadores: {
-            [jogador1Id]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador1, baralho: baralhoJogador1, cemiterio: [] },
-            [jogador2Id]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador2, baralho: baralhoJogador2, cemiterio: [] },
+            [jogador1Id]: {
+                vida: 100,
+                recursos: { C: 10, M: 10, O: 10, A: 0 },
+                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
+                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
+                mao: maoJogador1,
+                baralho: baralhoJogador1,
+                cemiterio: []
+            },
+            [jogador2Id]: {
+                vida: 100,
+                recursos: { C: 10, M: 10, O: 10, A: 0 },
+                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
+                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
+                mao: maoJogador2,
+                baralho: baralhoJogador2,
+                cemiterio: []
+            },
         },
         turno: jogador1Id,
         fase: 'Manifestação',
-        campo: { [jogador1Id]: [], [jogador2Id]: [] }
+        campo: {
+            [jogador1Id]: [],
+            [jogador2Id]: []
+        }
     };
 }
 
