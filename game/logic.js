@@ -1,6 +1,5 @@
-const { FieldPath } = require('@google-cloud/firestore');
+const admin = require('firebase-admin');
 
-// Embaralhador de arrays
 function embaralhar(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -10,68 +9,55 @@ function embaralhar(array) {
 }
 
 async function criarEstadoInicialDoJogo(db, jogador1Id, deckId1, jogador2Id, deckId2) {
-    console.log("📡 Buscando baralhos do Firestore...");
+    console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
+    
+    const USER_ID_TESTE = 'usuario_teste_01'; 
+    
+    const deck1Ref = db.collection('usuarios', USER_ID_TESTE, 'baralhos').doc(deckId1);
+    const deck2Ref = db.collection('usuarios', USER_ID_TESTE, 'baralhos').doc(deckId2);
+    
+    const [doc1, doc2] = await Promise.all([deck1Ref.get(), deck2Ref.get()]);
 
-    // Aqui está hardcoded o deck. Você pode substituir por deckId1 futuramente.
-    const deckReceitaRef = db.collection('baralhos').doc('usuario_teste_01');
-    const doc = await deckReceitaRef.get();
+    if (!doc1.exists) throw new Error(`❌ Baralho '${deckId1}' do Jogador 1 não encontrado no Firestore!`);
+    if (!doc2.exists) throw new Error(`❌ Baralho '${deckId2}' do Jogador 2 não encontrado no Firestore!`);
 
-    if (!doc.exists) {
-        throw new Error("❌ Baralho 'usuario_teste_01' não encontrado no Firestore!");
+    const deckIds1 = doc1.data().cartas;
+    const deckIds2 = doc2.data().cartas;
+
+    const todosOsIds = [...new Set([...deckIds1, ...deckIds2])];
+    
+    let baralhoCompleto1 = [];
+    let baralhoCompleto2 = [];
+
+    if (todosOsIds.length > 0) {
+        const cartasRef = db.collection('cartas_mestras');
+        const snapshot = await cartasRef.where(admin.firestore.FieldPath.documentId(), 'in', todosOsIds).get();
+        
+        const dadosCompletosCartas = {};
+        snapshot.forEach(doc => {
+            dadosCompletosCartas[doc.id] = { id: doc.id, ...doc.data() };
+        });
+
+        baralhoCompleto1 = deckIds1.map(id => dadosCompletosCartas[id]);
+        baralhoCompleto2 = deckIds2.map(id => dadosCompletosCartas[id]);
+    } else {
+        console.log("Aviso: um ou ambos os baralhos carregados estão vazios.");
     }
 
-    const deckIds = doc.data().cartas;
+    const baralhoJogador1 = embaralhar(baralhoCompleto1);
+    const baralhoJogador2 = embaralhar(baralhoCompleto2);
 
-    if (!deckIds || deckIds.length === 0) {
-        throw new Error("❌ O baralho encontrado está vazio ou não tem a propriedade 'cartas'.");
-    }
-
-    const cartasRef = db.collection('cartas_mestras');
-    const snapshot = await cartasRef
-        .where(FieldPath.documentId(), 'in', deckIds)
-        .get();
-
-    const dadosCompletosCartas = {};
-    snapshot.forEach(doc => {
-        dadosCompletosCartas[doc.id] = { id: doc.id, ...doc.data() };
-    });
-
-    const baralhoCompleto = deckIds.map(id => dadosCompletosCartas[id]);
-
-    console.log(`✅ Baralho com ${baralhoCompleto.length} cartas carregado.`);
-
-    const baralhoJogador1 = embaralhar([...baralhoCompleto]);
-    const baralhoJogador2 = embaralhar([...baralhoCompleto]);
     const maoJogador1 = baralhoJogador1.splice(0, 5);
     const maoJogador2 = baralhoJogador2.splice(0, 5);
 
     return {
         jogadores: {
-            [jogador1Id]: {
-                vida: 100,
-                recursos: { C: 10, M: 10, O: 10, A: 0 },
-                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
-                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
-                mao: maoJogador1,
-                baralho: baralhoJogador1,
-                cemiterio: []
-            },
-            [jogador2Id]: {
-                vida: 100,
-                recursos: { C: 10, M: 10, O: 10, A: 0 },
-                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
-                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
-                mao: maoJogador2,
-                baralho: baralhoJogador2,
-                cemiterio: []
-            },
+            [jogador1Id]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador1, baralho: baralhoJogador1, cemiterio: [] },
+            [jogador2Id]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador2, baralho: baralhoJogador2, cemiterio: [] },
         },
         turno: jogador1Id,
         fase: 'Manifestação',
-        campo: {
-            [jogador1Id]: [],
-            [jogador2Id]: []
-        }
+        campo: { [jogador1Id]: [], [jogador2Id]: [] }
     };
 }
 
