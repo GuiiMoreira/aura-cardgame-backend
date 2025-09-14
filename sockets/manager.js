@@ -7,46 +7,40 @@ function gerenciarSockets(io, db) {
      io.on('connection', (socket) => {
         console.log(`[CONEXÃO] Jogador conectado: ${socket.id}`);
 
-        socket.on('buscar_partida', async ({ deckId }) => {
-            if (!deckId) { return; }
+        socket.on('buscar_partida', async ({ deckId, userId }) => {
+            if (!deckId || !userId) { return; }
             
-            // Trava de segurança para impedir que o mesmo jogador entre na fila duas vezes
-            if (filaDeEspera && filaDeEspera.socket.id === socket.id) {
-                console.log(`[FILA] Jogador ${socket.id} já está na fila. Aguardando.`);
-                return;
-            }
+            if (filaDeEspera && filaDeEspera.socket.id === socket.id) { return; }
             
-            console.log(`[FILA] Jogador ${socket.id} entrou na busca com o baralho ${deckId}`);
+            console.log(`[FILA] Jogador ${userId} (socket ${socket.id}) entrou na busca com o baralho ${deckId}`);
 
             if (!filaDeEspera) {
-                filaDeEspera = { socket, deckId };
-                socket.emit('status_matchmaking', 'Você está na fila, aguardando outro jogador...');
-                console.log(`[FILA] ${socket.id} é o primeiro na fila.`);
+                filaDeEspera = { socket, deckId, userId };
+                socket.emit('status_matchmaking', 'Você está na fila...');
             } else {
                 const jogador1 = filaDeEspera.socket;
                 const deckId1 = filaDeEspera.deckId;
+                const userId1 = filaDeEspera.userId;
+                
                 const jogador2 = socket;
                 const deckId2 = deckId;
-                
-                console.log(`[MATCH] Fila não está vazia. Formando partida...`);
-                
-                // Limpa a fila ANTES de criar a partida
+                const userId2 = userId;
+
                 filaDeEspera = null;
 
                 const nomeDaSala = `sala_${jogador1.id}_${jogador2.id}`;
                 jogador1.join(nomeDaSala);
                 jogador2.join(nomeDaSala);
 
-                console.log(`[MATCH] Matchmaking! J1(${jogador1.id}, Deck: ${deckId1}) vs J2(${jogador2.id}, Deck: ${deckId2})`);
+                console.log(`[MATCH] Matchmaking! J1(${userId1}) vs J2(${userId2})`);
 
                 try {
-                    const estadoInicial = await criarEstadoInicialDoJogo(db, jogador1.id, deckId1, jogador2.id, deckId2);
+                    // Passamos os UIDs para a lógica do jogo, não mais os socket.ids
+                    const estadoInicial = await criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2);
                     jogosAtivos[nomeDaSala] = estadoInicial;
                     io.to(nomeDaSala).emit('partida_encontrada', { sala: nomeDaSala, estado: estadoInicial });
-                    console.log(`[MATCH] Partida criada e enviada para a sala ${nomeDaSala}`);
                 } catch (error) {
                     console.error("Erro crítico ao criar o estado do jogo:", error);
-                    io.to(nomeDaSala).emit('erro_partida', { mensagem: 'Não foi possível carregar os baralhos.' });
                 }
             }
         });
