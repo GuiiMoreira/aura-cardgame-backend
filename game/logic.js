@@ -11,13 +11,15 @@ function embaralhar(array) {
 async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
     console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
     
-    const deck1Ref = db.collection('usuarios', userId1, 'baralhos').doc(deckId1);
-    const deck2Ref = db.collection('usuarios', userId2, 'baralhos').doc(deckId2);
+    const deck1Ref = db.collection('usuarios', userId1, 'baralhos').doc(String(deckId1));
+    const deck2Ref = db.collection('usuarios', userId2, 'baralhos').doc(String(deckId2));
     
     const [doc1, doc2] = await Promise.all([deck1Ref.get(), deck2Ref.get()]);
 
-    if (!doc1.exists()) throw new Error(`❌ Baralho '${deckId1}' do Jogador 1 não encontrado!`);
-    if (!doc2.exists()) throw new Error(`❌ Baralho '${deckId2}' do Jogador 2 não encontrado!`);
+    // CORRIGIDO: Usamos .exists como uma propriedade, sem parênteses ()
+    if (!doc1.exists) throw new Error(`❌ Baralho '${deckId1}' do Jogador 1 não encontrado!`);
+    // CORRIGIDO: Usamos .exists como uma propriedade, sem parênteses ()
+    if (!doc2.exists) throw new Error(`❌ Baralho '${deckId2}' do Jogador 2 não encontrado!`);
 
     const deckIds1 = doc1.data().cartas;
     const deckIds2 = doc2.data().cartas;
@@ -50,12 +52,12 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
 
     return {
         jogadores: {
-            [jogador1Id]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador1, baralho: baralhoJogador1, cemiterio: [] },
-            [jogador2Id]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador2, baralho: baralhoJogador2, cemiterio: [] },
+            [userId1]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador1, baralho: baralhoJogador1, cemiterio: [] },
+            [userId2]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador2, baralho: baralhoJogador2, cemiterio: [] },
         },
-        turno: jogador1Id,
+        turno: userId1,
         fase: 'Manifestação',
-        campo: { [jogador1Id]: [], [jogador2Id]: [] }
+        campo: { [userId1]: [], [userId2]: [] }
     };
 }
 
