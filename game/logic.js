@@ -11,8 +11,8 @@ function embaralhar(array) {
 async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
     console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
     
-    const deck1Ref = db.collection('usuarios', userId1, 'baralhos').doc(String(deckId1));
-    const deck2Ref = db.collection('usuarios', userId2, 'baralhos').doc(String(deckId2));
+const deck1Ref = db.collection('usuarios').doc(userId1).collection('baralhos').doc(String(deckId1));
+const deck2Ref = db.collection('usuarios').doc(userId2).collection('baralhos').doc(String(deckId2));
     
     const [doc1, doc2] = await Promise.all([deck1Ref.get(), deck2Ref.get()]);
 
