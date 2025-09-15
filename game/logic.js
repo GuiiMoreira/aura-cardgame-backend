@@ -11,32 +11,36 @@ function embaralhar(array) {
 async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
     console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
     
-const deck1Ref = db.collection('usuarios').doc(userId1).collection('baralhos').doc(String(deckId1));
-const deck2Ref = db.collection('usuarios').doc(userId2).collection('baralhos').doc(String(deckId2));
+    const deck1Ref = db.collection('usuarios').doc(userId1).collection('baralhos').doc(String(deckId1));
+    const deck2Ref = db.collection('usuarios').doc(userId2).collection('baralhos').doc(String(deckId2));
     
     const [doc1, doc2] = await Promise.all([deck1Ref.get(), deck2Ref.get()]);
 
-    // CORRIGIDO: Usamos .exists como uma propriedade, sem parênteses ()
     if (!doc1.exists) throw new Error(`❌ Baralho '${deckId1}' do Jogador 1 não encontrado!`);
-    // CORRIGIDO: Usamos .exists como uma propriedade, sem parênteses ()
     if (!doc2.exists) throw new Error(`❌ Baralho '${deckId2}' do Jogador 2 não encontrado!`);
 
     const deckIds1 = doc1.data().cartas;
     const deckIds2 = doc2.data().cartas;
 
     const todosOsIds = [...new Set([...deckIds1, ...deckIds2])];
-    
+
     let baralhoCompleto1 = [];
     let baralhoCompleto2 = [];
 
     if (todosOsIds.length > 0) {
         const cartasRef = db.collection('cartas_mestras');
-        const snapshot = await cartasRef.where(admin.firestore.FieldPath.documentId(), 'in', todosOsIds).get();
-        
-        const dadosCompletosCartas = {};
-        snapshot.forEach(doc => {
-            dadosCompletosCartas[doc.id] = { id: doc.id, ...doc.data() };
-        });
+        const MAX_IDS = 30;
+        let dadosCompletosCartas = {};
+
+        // Faz consultas em batches de até 30 IDs para evitar erro do Firestore
+        for (let i = 0; i < todosOsIds.length; i += MAX_IDS) {
+            const batchIds = todosOsIds.slice(i, i + MAX_IDS);
+            const snapshot = await cartasRef.where(admin.firestore.FieldPath.documentId(), 'in', batchIds).get();
+
+            snapshot.forEach(doc => {
+                dadosCompletosCartas[doc.id] = { id: doc.id, ...doc.data() };
+            });
+        }
 
         baralhoCompleto1 = deckIds1.map(id => dadosCompletosCartas[id]);
         baralhoCompleto2 = deckIds2.map(id => dadosCompletosCartas[id]);
