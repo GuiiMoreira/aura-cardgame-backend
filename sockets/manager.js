@@ -49,6 +49,8 @@ function gerenciarSockets(io, db) {
             }
         });
 
+        
+
         const criarManipuladorDeAcao = (nomeAcao, logicaAcao) => {
              socket.on(nomeAcao, (dados) => {
                 const sala = dados.sala;
@@ -129,6 +131,15 @@ function gerenciarSockets(io, db) {
                 if (c.Vida <= 0) { estado.jogadores[oponenteId].cemiterio.push(c); return false; }
                 return true;
             });
+        });
+
+         socket.on('cancelar_busca', () => {
+            // Verifica se o jogador que enviou o evento é o que está na fila
+            if (filaDeEspera && filaDeEspera.socket.id === socket.id) {
+                console.log(`[FILA] Jogador ${filaDeEspera.userId} (${socket.id}) cancelou a busca.`);
+                filaDeEspera = null; // Limpa a fila
+                console.log(`[FILA] Fila foi limpa.`);
+            }
         });
 
         socket.on('disconnect', () => {
