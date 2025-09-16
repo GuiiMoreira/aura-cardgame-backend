@@ -133,15 +133,6 @@ function gerenciarSockets(io, db) {
             });
         });
 
-         socket.on('cancelar_busca', () => {
-            // Verifica se o jogador que enviou o evento é o que está na fila
-            if (filaDeEspera && filaDeEspera.socket.id === socket.id) {
-                console.log(`[FILA] Jogador ${filaDeEspera.userId} (${socket.id}) cancelou a busca.`);
-                filaDeEspera = null; // Limpa a fila
-                console.log(`[FILA] Fila foi limpa.`);
-            }
-        });
-
         socket.on('disconnect', () => {
             console.log(`[DESCONEXÃO] Jogador desconectado: ${socket.id}`);
             if (filaDeEspera && filaDeEspera.socket.id === socket.id) {
