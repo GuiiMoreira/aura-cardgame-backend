@@ -9,7 +9,7 @@ function embaralhar(array) {
 }
 
 async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
-    console.log(`📡 Buscando baralhos... J1(${userId1}): ${deckId1}, J2(${userId2}): ${deckId2}`);
+    console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
     
     const deck1Ref = db.collection('usuarios').doc(userId1).collection('baralhos').doc(String(deckId1));
     const deck2Ref = db.collection('usuarios').doc(userId2).collection('baralhos').doc(String(deckId2));
@@ -23,46 +23,41 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
     const deckIds2 = doc2.data().cartas;
 
     const todosOsIds = [...new Set([...deckIds1, ...deckIds2])];
-    
-    let baralhoCompleto1 = [], baralhoCompleto2 = [];
+
+    let baralhoCompleto1 = [];
+    let baralhoCompleto2 = [];
+
     if (todosOsIds.length > 0) {
         const cartasRef = db.collection('cartas_mestras');
-        const snapshot = await cartasRef.where(admin.firestore.FieldPath.documentId(), 'in', todosOsIds).get();
-        const dadosCompletosCartas = {};
-        snapshot.forEach(doc => {
-            dadosCompletosCartas[doc.id] = { id: doc.id, ...doc.data() };
-        });
+        const MAX_IDS = 30;
+        let dadosCompletosCartas = {};
+
+        // Faz consultas em batches de até 30 IDs para evitar erro do Firestore
+        for (let i = 0; i < todosOsIds.length; i += MAX_IDS) {
+            const batchIds = todosOsIds.slice(i, i + MAX_IDS);
+            const snapshot = await cartasRef.where(admin.firestore.FieldPath.documentId(), 'in', batchIds).get();
+
+            snapshot.forEach(doc => {
+                dadosCompletosCartas[doc.id] = { id: doc.id, ...doc.data() };
+            });
+        }
+
         baralhoCompleto1 = deckIds1.map(id => dadosCompletosCartas[id]);
         baralhoCompleto2 = deckIds2.map(id => dadosCompletosCartas[id]);
+    } else {
+        console.log("Aviso: um ou ambos os baralhos carregados estão vazios.");
     }
 
     const baralhoJogador1 = embaralhar(baralhoCompleto1);
     const baralhoJogador2 = embaralhar(baralhoCompleto2);
+
     const maoJogador1 = baralhoJogador1.splice(0, 5);
     const maoJogador2 = baralhoJogador2.splice(0, 5);
 
     return {
         jogadores: {
-            [userId1]: {
-                vida: 100,
-                recursos: { C: 10, M: 10, O: 10, A: 0 },
-                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
-                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
-                mao: maoJogador1,
-                baralho: baralhoJogador1,
-                cemiterio: [],
-                precisaDescartar: false // NOVO
-            },
-            [userId2]: {
-                vida: 100,
-                recursos: { C: 10, M: 10, O: 10, A: 0 },
-                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
-                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
-                mao: maoJogador2,
-                baralho: baralhoJogador2,
-                cemiterio: [],
-                precisaDescartar: false // NOVO
-            },
+            [userId1]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador1, baralho: baralhoJogador1, cemiterio: [] },
+            [userId2]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador2, baralho: baralhoJogador2, cemiterio: [] },
         },
         turno: userId1,
         fase: 'Manifestação',
