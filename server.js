@@ -151,7 +151,8 @@ async function bootstrap() {
     const token = socket.handshake?.auth?.token;
     if (!token || typeof token !== 'string') {
       logger.warn('Handshake de socket sem token válido.', { requestId, socketId: socket.id });
-      return next(new Error('Token de autenticação ausente ou inválido.'));
+      socket.authError = 'Token de autenticação ausente ou inválido.';
+      return next();
     }
 
     try {
@@ -183,7 +184,8 @@ async function bootstrap() {
         socketId: socket.id,
         error,
       });
-      return next(new Error('Token de autenticação inválido ou expirado.'));
+      socket.authError = 'Token de autenticação inválido ou expirado.';
+      return next();
     }
   });
 
