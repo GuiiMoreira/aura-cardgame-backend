@@ -3,6 +3,38 @@ const { criarEstadoInicialDoJogo } = require('../game/logic');
 const jogosAtivos = {};
 let filaDeEspera = null;
 
+function moverMortosParaCemiterio(estado, jogadorId) {
+    estado.campo[jogadorId] = estado.campo[jogadorId].filter(carta => {
+        if (carta.Vida <= 0) {
+            estado.jogadores[jogadorId].cemiterio.push(carta);
+            return false;
+        }
+        return true;
+    });
+}
+
+function resolverCombateDeclarado(estado, userId, atacanteId, alvoId) {
+    const oponenteId = Object.keys(estado.jogadores).find(id => id !== userId);
+    const cartaAtacante = estado.campo[userId].find(c => c.id === atacanteId);
+    const cartaAlvo = estado.campo[oponenteId].find(c => c.id === alvoId);
+    if (!cartaAtacante || !cartaAlvo || cartaAtacante.exaustao) return;
+
+    if (cartaAtacante.Mecânica && cartaAtacante.Mecânica.includes('Instável')) {
+        const valorInstavel = parseInt(cartaAtacante.Mecânica.match(/\((\d+)\)/)[1]) * 10;
+        cartaAtacante.Vida -= valorInstavel;
+        cartaAlvo.Vida -= valorInstavel;
+    }
+
+    if (cartaAtacante.Vida > 0 && cartaAlvo.Vida > 0) {
+        cartaAlvo.Vida -= cartaAtacante.Força;
+        cartaAtacante.Vida -= cartaAlvo.Força;
+    }
+
+    cartaAtacante.exaustao = true;
+    moverMortosParaCemiterio(estado, userId);
+    moverMortosParaCemiterio(estado, oponenteId);
+}
+
 function gerenciarSockets(io, db) {
     io.on('connection', (socket) => {
         console.log(`[CONEXÃO] Jogador conectado: ${socket.id}`);
@@ -109,28 +141,7 @@ function gerenciarSockets(io, db) {
             if (danoTotal > 0) { oponente.vida -= danoTotal; }
         });
         criarManipuladorDeAcao('declarar_ataque', (estado, userId, { atacanteId, alvoId }) => {
-            const oponenteId = Object.keys(estado.jogadores).find(id => id !== userId);
-            const cartaAtacante = estado.campo[userId].find(c => c.id === atacanteId);
-            const cartaAlvo = estado.campo[oponenteId].find(c => c.id === alvoId);
-            if (!cartaAtacante || !cartaAlvo || cartaAtacante.exaustao) return;
-            if (cartaAtacante.Mecânica && cartaAtacante.Mecânica.includes('Instável')) {
-                const valorInstavel = parseInt(cartaAtacante.Mecânica.match(/\((\d+)\)/)[1]) * 10;
-                cartaAtacante.Vida -= valorInstavel;
-                cartaAlvo.Vida -= valorInstavel;
-            }
-            if (cartaAtacante.Vida > 0 && cartaAlvo.Vida > 0) {
-                cartaAlvo.Vida -= cartaAtacante.Força;
-                cartaAtacante.Vida -= cartaAtacante.Força;
-            }
-            cartaAtacante.exaustao = true;
-            estado.campo[userId] = estado.campo[userId].filter(c => {
-                if (c.Vida <= 0) { estado.jogadores[userId].cemiterio.push(c); return false; }
-                return true;
-            });
-            estado.campo[oponenteId] = estado.campo[oponenteId].filter(c => {
-                if (c.Vida <= 0) { estado.jogadores[oponenteId].cemiterio.push(c); return false; }
-                return true;
-            });
+            resolverCombateDeclarado(estado, userId, atacanteId, alvoId);
         });
 
         socket.on('disconnect', () => {
@@ -145,3 +156,7 @@ function gerenciarSockets(io, db) {
 }
 
 module.exports = gerenciarSockets;
+module.exports.__testables = {
+    resolverCombateDeclarado,
+    moverMortosParaCemiterio
+};
