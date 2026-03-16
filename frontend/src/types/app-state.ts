@@ -7,7 +7,15 @@ import type {
   StatusMatchmakingPayload,
 } from '../contracts/socket-contracts';
 
-export type FlowStep = 'login' | 'lobby' | 'matchmaking' | 'match-room';
+export type FlowStep = 'login' | 'lobby' | 'matchmaking' | 'partida' | 'resultado';
+
+export type ConnectionState = {
+  connected: boolean;
+  reconnecting: boolean;
+  reconnectAttempts: number;
+  reconnectingMessage?: string;
+  abandonmentDefeat?: boolean;
+};
 
 export type MatchEventsState = {
   matchmakingStatus?: StatusMatchmakingPayload;

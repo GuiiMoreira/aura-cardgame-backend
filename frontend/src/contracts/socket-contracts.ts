@@ -2,6 +2,7 @@ export {
   LEGACY_PROTOCOL_VERSION,
   SOCKET_PROTOCOL_VERSION,
   type SocketHandshakeAuth,
+  type AuraCard,
   type EstadoPartida,
   type ErroPartidaPayload,
   type EstadoAtualizadoPayload,

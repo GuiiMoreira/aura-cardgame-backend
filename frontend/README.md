@@ -1,24 +1,26 @@
 # Aura Cardgame Frontend (React + Vite)
 
-Frontend inicial para consumir os eventos Socket.IO do backend.
+Frontend para consumir os eventos Socket.IO do backend com fluxo completo de partida.
 
 ## Módulos implementados
 
 - Login
-- Lobby
-- Matchmaking
-- Sala de Partida
+- Lobby / Matchmaking
+- Partida
+- Resultado
 
-## Eventos consumidos
+## Camadas principais
+
+- `src/services/socketClient.ts`: encapsula conexão, assinatura de eventos e comandos de jogo.
+- `src/features/partida`: componentes de mão/campo/carta com base para habilidades especiais.
+
+## Eventos sincronizados na UI
 
 - `partida_encontrada`
 - `estado_atualizado`
 - `fim_de_jogo`
 - `erro_partida`
-
-## Contrato de payloads
-
-As tipagens estão centralizadas em `packages/shared-contracts/src/index.ts`.
+- reconexão (`disconnect`, `reconnect_attempt`, `reconnect`, `reconnect_failed`)
 
 ## Modo mock server
 
@@ -37,6 +39,3 @@ Para backend online, desative o checkbox "Ativar mock server" na tela de Login e
 ```bash
 VITE_API_URL=http://localhost:3000 npm run dev
 ```
-
-
-Também é possível criar `frontend/.env.local` com `VITE_API_URL=http://localhost:3000`.
