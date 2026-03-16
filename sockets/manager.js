@@ -221,8 +221,15 @@ function gerenciarSockets(io, db) {
                     io.to(nomeDaSala).emit('partida_encontrada', { sala: nomeDaSala, estado: estadoInicial });
                     console.log(`[MATCH] Partida criada e enviada com sucesso para a sala ${nomeDaSala}`);
                 } catch (error) {
-                    console.error('Erro crítico ao criar o estado do jogo:', error);
-                    io.to(nomeDaSala).emit('erro_partida', { motivo: 'Não foi possível carregar os baralhos.' });
+                    const motivo = error?.code === 'DECK_INVALIDO'
+                        ? error.message
+                        : 'Não foi possível carregar os baralhos.';
+                    console.error('[MATCH] Erro ao criar estado inicial:', {
+                        sala: nomeDaSala,
+                        jogadores: [{ uid: u1, deckId: d1 }, { uid: u2, deckId: d2 }],
+                        erro: error,
+                    });
+                    io.to(nomeDaSala).emit('erro_partida', { motivo });
                 }
             }
         });

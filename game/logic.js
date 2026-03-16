@@ -1,5 +1,20 @@
 const admin = require('firebase-admin');
 
+const REGRAS_DECK = {
+    TAMANHO_MINIMO: 30,
+    TAMANHO_MAXIMO: 30,
+    MAX_COPIAS_POR_CARTA: 3,
+};
+
+class DeckValidationError extends Error {
+    constructor(message, context = {}) {
+        super(message);
+        this.name = 'DeckValidationError';
+        this.code = 'DECK_INVALIDO';
+        this.context = context;
+    }
+}
+
 function embaralhar(array) {
     for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -16,6 +31,40 @@ function normalizarDeckIds(deckIds) {
     return deckIds.map(id => String(id));
 }
 
+function registrarRejeicaoDeck(uid, deckId, motivo, detalhes = {}) {
+    console.warn('[AUDITORIA][DECK_REJEITADO]', {
+        uid,
+        deckId: String(deckId),
+        motivo,
+        detalhes,
+    });
+}
+
+function validarRegrasDoDeck(deckIds, uid, deckId) {
+    const tamanho = deckIds.length;
+
+    if (tamanho < REGRAS_DECK.TAMANHO_MINIMO || tamanho > REGRAS_DECK.TAMANHO_MAXIMO) {
+        const motivo = `Baralho inválido: esperado ${REGRAS_DECK.TAMANHO_MINIMO} cartas (mínimo/máximo), recebido ${tamanho}.`;
+        registrarRejeicaoDeck(uid, deckId, 'tamanho_invalido', { tamanho, ...REGRAS_DECK });
+        throw new DeckValidationError(motivo, { uid, deckId, tamanho });
+    }
+
+    const contagem = deckIds.reduce((acc, id) => {
+        acc[id] = (acc[id] || 0) + 1;
+        return acc;
+    }, {});
+
+    const cartasComExcesso = Object.entries(contagem)
+        .filter(([, copias]) => copias > REGRAS_DECK.MAX_COPIAS_POR_CARTA)
+        .map(([id, copias]) => ({ id, copias }));
+
+    if (cartasComExcesso.length > 0) {
+        const motivo = `Baralho inválido: limite de ${REGRAS_DECK.MAX_COPIAS_POR_CARTA} cópias por carta excedido (${cartasComExcesso.map(c => `${c.id}x${c.copias}`).join(', ')}).`;
+        registrarRejeicaoDeck(uid, deckId, 'limite_de_copias_excedido', { cartasComExcesso, ...REGRAS_DECK });
+        throw new DeckValidationError(motivo, { uid, deckId, cartasComExcesso });
+    }
+}
+
 async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
     console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
 
@@ -29,6 +78,9 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
 
     const deckIds1 = normalizarDeckIds(doc1.data().cartas);
     const deckIds2 = normalizarDeckIds(doc2.data().cartas);
+
+    validarRegrasDoDeck(deckIds1, userId1, deckId1);
+    validarRegrasDoDeck(deckIds2, userId2, deckId2);
 
     const todosOsIds = [...new Set([...deckIds1, ...deckIds2])];
 
@@ -52,10 +104,13 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
 
         const idsNaoEncontrados = todosOsIds.filter(id => !dadosCompletosCartas[id]);
         if (idsNaoEncontrados.length > 0) {
-            throw new Error(
-                `❌ ${idsNaoEncontrados.length} carta(s) do baralho não encontrada(s) em 'cartas_mestras': ` +
-                idsNaoEncontrados.join(', ')
-            );
+            const detalhesErro = `IDs ausentes em cartas_mestras: ${idsNaoEncontrados.join(', ')}`;
+            registrarRejeicaoDeck(userId1, deckId1, 'cartas_ausentes_em_cartas_mestras', { idsNaoEncontrados });
+            registrarRejeicaoDeck(userId2, deckId2, 'cartas_ausentes_em_cartas_mestras', { idsNaoEncontrados });
+            throw new DeckValidationError(`Baralho inválido: ${detalhesErro}.`, {
+                deckIds: [String(deckId1), String(deckId2)],
+                idsNaoEncontrados,
+            });
         }
 
         baralhoCompleto1 = deckIds1.map(id => dadosCompletosCartas[id]);
@@ -82,5 +137,7 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
 }
 
 module.exports = {
-    criarEstadoInicialDoJogo
+    criarEstadoInicialDoJogo,
+    REGRAS_DECK,
+    DeckValidationError,
 };

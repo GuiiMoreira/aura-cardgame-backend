@@ -54,6 +54,14 @@ Documentos de cartas usadas pelos baralhos. Cada documento deve ter pelo menos:
 Cada documento representa um baralho personalizado de um usuário. Estrutura esperada:
 - `cartas`: array de IDs de cartas (string) que existem em `cartas_mestras`.
 
+### 📏 Regras oficiais de construção de deck
+Ao iniciar uma partida, o backend valida o deck antes de montar o estado inicial:
+- **Tamanho fixo**: exatamente **30 cartas** (mínimo = 30 e máximo = 30).
+- **Cópias por carta**: no máximo **3 cópias** do mesmo ID.
+- **Integridade de catálogo**: todos os IDs do deck devem existir em `cartas_mestras`.
+
+Se alguma regra falhar, a partida é abortada e os jogadores recebem `erro_partida` com motivo explícito (ex.: tamanho inválido, excesso de cópias ou IDs ausentes). O backend também registra log de auditoria com contexto (`uid`, `deckId`, motivo e detalhes).
+
 ---
 
 ## 🚀 Configuração e Execução
