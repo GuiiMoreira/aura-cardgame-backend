@@ -8,19 +8,27 @@ function embaralhar(array) {
     return array;
 }
 
+function normalizarDeckIds(deckIds) {
+    if (!Array.isArray(deckIds)) {
+        return [];
+    }
+
+    return deckIds.map(id => String(id));
+}
+
 async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
     console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
-    
+
     const deck1Ref = db.collection('usuarios').doc(userId1).collection('baralhos').doc(String(deckId1));
     const deck2Ref = db.collection('usuarios').doc(userId2).collection('baralhos').doc(String(deckId2));
-    
+
     const [doc1, doc2] = await Promise.all([deck1Ref.get(), deck2Ref.get()]);
 
     if (!doc1.exists) throw new Error(`❌ Baralho '${deckId1}' do Jogador 1 não encontrado!`);
     if (!doc2.exists) throw new Error(`❌ Baralho '${deckId2}' do Jogador 2 não encontrado!`);
 
-    const deckIds1 = doc1.data().cartas;
-    const deckIds2 = doc2.data().cartas;
+    const deckIds1 = normalizarDeckIds(doc1.data().cartas);
+    const deckIds2 = normalizarDeckIds(doc2.data().cartas);
 
     const todosOsIds = [...new Set([...deckIds1, ...deckIds2])];
 
@@ -30,7 +38,7 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
     if (todosOsIds.length > 0) {
         const cartasRef = db.collection('cartas_mestras');
         const MAX_IDS = 30;
-        let dadosCompletosCartas = {};
+        const dadosCompletosCartas = {};
 
         // Faz consultas em batches de até 30 IDs para evitar erro do Firestore
         for (let i = 0; i < todosOsIds.length; i += MAX_IDS) {
@@ -42,10 +50,18 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
             });
         }
 
+        const idsNaoEncontrados = todosOsIds.filter(id => !dadosCompletosCartas[id]);
+        if (idsNaoEncontrados.length > 0) {
+            throw new Error(
+                `❌ ${idsNaoEncontrados.length} carta(s) do baralho não encontrada(s) em 'cartas_mestras': ` +
+                idsNaoEncontrados.join(', ')
+            );
+        }
+
         baralhoCompleto1 = deckIds1.map(id => dadosCompletosCartas[id]);
         baralhoCompleto2 = deckIds2.map(id => dadosCompletosCartas[id]);
     } else {
-        console.log("Aviso: um ou ambos os baralhos carregados estão vazios.");
+        console.log('Aviso: um ou ambos os baralhos carregados estão vazios.');
     }
 
     const baralhoJogador1 = embaralhar(baralhoCompleto1);
@@ -57,7 +73,7 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
     return {
         jogadores: {
             [userId1]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador1, baralho: baralhoJogador1, cemiterio: [] },
-            [userId2]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador2, baralho: baralhoJogador2, cemiterio: [] },
+            [userId2]: { vida: 100, recursos: { C: 10, M: 10, O: 10, A: 0 }, recursosMax: { C: 60, M: 60, O: 60, A: 60 }, geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 }, mao: maoJogador2, baralho: baralhoJogador2, cemiterio: [] }
         },
         turno: userId1,
         fase: 'Manifestação',
