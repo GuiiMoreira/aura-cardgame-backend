@@ -1,3 +1,5 @@
+const { runHookForCard } = require('./abilities');
+
 function getOponenteId(estado, userId) {
   return Object.keys(estado.jogadores).find((id) => id !== userId);
 }
@@ -21,6 +23,38 @@ function passarTurno(estado, userId) {
   });
 
   estado.turno = proximoJogadorId;
+}
+
+function resolveDeaths(estado, ordemJogadores, context = {}) {
+  let houveRemocao = true;
+
+  while (houveRemocao) {
+    houveRemocao = false;
+
+    ordemJogadores.forEach((jogadorId) => {
+      const cartasDoCampo = estado.campo[jogadorId];
+      const sobreviventes = [];
+
+      cartasDoCampo.forEach((carta) => {
+        if (carta.Vida > 0) {
+          sobreviventes.push(carta);
+          return;
+        }
+
+        runHookForCard(carta, 'onDeath', {
+          estado,
+          userId: jogadorId,
+          opponentId: getOponenteId(estado, jogadorId),
+          ...context,
+        });
+
+        estado.jogadores[jogadorId].cemiterio.push(carta);
+        houveRemocao = true;
+      });
+
+      estado.campo[jogadorId] = sobreviventes;
+    });
+  }
 }
 
 function jogarCarta(estado, userId, cartaId) {
@@ -47,6 +81,14 @@ function jogarCarta(estado, userId, cartaId) {
   jogador.mao.splice(idx, 1);
   carta.exaustao = true;
   estado.campo[userId].push(carta);
+
+  runHookForCard(carta, 'onSummon', {
+    estado,
+    userId,
+    opponentId: getOponenteId(estado, userId),
+  });
+
+  resolveDeaths(estado, [userId, getOponenteId(estado, userId)]);
 }
 
 function atacarFortaleza(estado, userId, atacantesIds) {
@@ -67,19 +109,6 @@ function atacarFortaleza(estado, userId, atacantesIds) {
   }
 }
 
-function extrairValorInstavel(cartaAtacante) {
-  if (!cartaAtacante.Mecânica || !cartaAtacante.Mecânica.includes('Instável')) {
-    return 0;
-  }
-
-  const match = cartaAtacante.Mecânica.match(/\((\d+)\)/);
-  if (!match) {
-    return 0;
-  }
-
-  return parseInt(match[1], 10) * 10;
-}
-
 function declararAtaque(estado, userId, atacanteId, alvoId) {
   const oponenteId = getOponenteId(estado, userId);
   const cartaAtacante = estado.campo[userId].find((carta) => carta.id === atacanteId);
@@ -89,33 +118,44 @@ function declararAtaque(estado, userId, atacanteId, alvoId) {
     return;
   }
 
-  const valorInstavel = extrairValorInstavel(cartaAtacante);
-  if (valorInstavel > 0) {
-    cartaAtacante.Vida -= valorInstavel;
-    cartaAlvo.Vida -= valorInstavel;
-  }
+  runHookForCard(cartaAtacante, 'beforeAttack', {
+    estado,
+    userId,
+    opponentId: oponenteId,
+    targetCard: cartaAlvo,
+  });
+
+  runHookForCard(cartaAlvo, 'beforeAttack', {
+    estado,
+    userId: oponenteId,
+    opponentId: userId,
+    targetCard: cartaAtacante,
+  });
 
   if (cartaAtacante.Vida > 0 && cartaAlvo.Vida > 0) {
     cartaAlvo.Vida -= cartaAtacante.Força;
     cartaAtacante.Vida -= cartaAlvo.Força;
   }
 
-  cartaAtacante.exaustao = true;
-
-  estado.campo[userId] = estado.campo[userId].filter((carta) => {
-    if (carta.Vida <= 0) {
-      estado.jogadores[userId].cemiterio.push(carta);
-      return false;
-    }
-    return true;
+  runHookForCard(cartaAtacante, 'afterAttack', {
+    estado,
+    userId,
+    opponentId: oponenteId,
+    targetCard: cartaAlvo,
   });
 
-  estado.campo[oponenteId] = estado.campo[oponenteId].filter((carta) => {
-    if (carta.Vida <= 0) {
-      estado.jogadores[oponenteId].cemiterio.push(carta);
-      return false;
-    }
-    return true;
+  runHookForCard(cartaAlvo, 'afterAttack', {
+    estado,
+    userId: oponenteId,
+    opponentId: userId,
+    targetCard: cartaAtacante,
+  });
+
+  cartaAtacante.exaustao = true;
+
+  resolveDeaths(estado, [userId, oponenteId], {
+    atacanteId,
+    alvoId,
   });
 }
 
