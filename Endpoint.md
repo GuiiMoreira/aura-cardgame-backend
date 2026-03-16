@@ -43,3 +43,15 @@ const socket = io('http://localhost:3000', {
 > Todos os payloads servidor → cliente incluem `protocolVersion`.
 
 Para campos obrigatórios/opcionais e exemplos completos de payload, consulte `docs/socket-contract.md`.
+
+
+## 📏 Regras oficiais de deck (validadas no `buscar_partida`)
+
+Antes da emissão de `partida_encontrada`, o backend valida os dois baralhos:
+
+- **Tamanho obrigatório**: exatamente **30 cartas**.
+- **Limite por carta**: no máximo **3 cópias** do mesmo ID.
+- **Catálogo válido**: todo ID enviado no deck precisa existir em `cartas_mestras`.
+
+Se alguma validação falhar, a sala recém-criada recebe `erro_partida` com `motivo` descritivo (por exemplo: tamanho inválido, limite de cópias excedido ou IDs ausentes em `cartas_mestras`) e a partida não é iniciada.
+

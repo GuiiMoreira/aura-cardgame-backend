@@ -103,6 +103,21 @@ test('criarEstadoInicialDoJogo rejeita deck com tamanho inválido', async () => 
   );
 });
 
+
+test('criarEstadoInicialDoJogo rejeita deck com mais de 30 cartas', async () => {
+  const deckInvalido = [...criarDeckValido(), 'c11'];
+
+  const db = criarDbFalso({
+    decks: { u1: { d1: deckInvalido }, u2: { d2: criarDeckValido() } },
+    cartasMestras: criarCartasMestras(),
+  });
+
+  await assert.rejects(
+    () => criarEstadoInicialDoJogo(db, 'u1', 'd1', 'u2', 'd2'),
+    (error) => error instanceof DeckValidationError && error.message.includes('esperado 30 cartas')
+  );
+});
+
 test('criarEstadoInicialDoJogo rejeita deck com mais cópias do que o permitido', async () => {
   const deckInvalido = ['c1', 'c1', 'c1', 'c1', ...criarDeckValido().slice(4, 30)];
 
@@ -129,6 +144,23 @@ test('criarEstadoInicialDoJogo rejeita deck com IDs ausentes em cartas_mestras',
     () => criarEstadoInicialDoJogo(db, 'u1', 'd1', 'u2', 'd2'),
     (error) =>
       error instanceof DeckValidationError &&
-      error.message.includes('IDs ausentes em cartas_mestras: c999')
+      error.message.includes('Baralho inválido (d1): IDs ausentes em cartas_mestras: c999')
+  );
+});
+
+
+test('criarEstadoInicialDoJogo rejeita quando o segundo deck referencia carta inexistente', async () => {
+  const deck2Invalido = ['c404', ...criarDeckValido().slice(1)];
+
+  const db = criarDbFalso({
+    decks: { u1: { d1: criarDeckValido() }, u2: { d2: deck2Invalido } },
+    cartasMestras: criarCartasMestras(),
+  });
+
+  await assert.rejects(
+    () => criarEstadoInicialDoJogo(db, 'u1', 'd1', 'u2', 'd2'),
+    (error) =>
+      error instanceof DeckValidationError &&
+      error.message.includes('Baralho inválido (d2): IDs ausentes em cartas_mestras: c404')
   );
 });

@@ -533,6 +533,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           });
           io.to(nomeDaSala).emit('erro_partida', withProtocol({
             motivo,
+            codigo: error?.code || 'PARTIDA_INDISPONIVEL',
             requestId,
             sala: nomeDaSala,
             matchId: nomeDaSala,

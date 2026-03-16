@@ -70,6 +70,26 @@ function validarRegrasDoDeck(deckIds, uid, deckId) {
   }
 }
 
+function validarCartasExistentesNoCatalogo(deckIds, dadosCompletosCartas, uid, deckId) {
+  const idsNaoEncontrados = [...new Set(deckIds.filter((id) => !dadosCompletosCartas[id]))];
+  if (idsNaoEncontrados.length === 0) {
+    return;
+  }
+
+  registrarRejeicaoDeck(uid, deckId, 'cartas_ausentes_em_cartas_mestras', {
+    idsNaoEncontrados,
+  });
+
+  throw new DeckValidationError(
+    `Baralho inválido (${deckId}): IDs ausentes em cartas_mestras: ${idsNaoEncontrados.join(', ')}.`,
+    {
+      uid,
+      deckId,
+      idsNaoEncontrados,
+    }
+  );
+}
+
 async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) {
   console.log(`📡 Buscando baralhos do Firestore... J1: ${deckId1}, J2: ${deckId2}`);
 
@@ -117,20 +137,8 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
       });
     }
 
-    const idsNaoEncontrados = todosOsIds.filter((id) => !dadosCompletosCartas[id]);
-    if (idsNaoEncontrados.length > 0) {
-      const detalhesErro = `IDs ausentes em cartas_mestras: ${idsNaoEncontrados.join(', ')}`;
-      registrarRejeicaoDeck(userId1, deckId1, 'cartas_ausentes_em_cartas_mestras', {
-        idsNaoEncontrados,
-      });
-      registrarRejeicaoDeck(userId2, deckId2, 'cartas_ausentes_em_cartas_mestras', {
-        idsNaoEncontrados,
-      });
-      throw new DeckValidationError(`Baralho inválido: ${detalhesErro}.`, {
-        deckIds: [String(deckId1), String(deckId2)],
-        idsNaoEncontrados,
-      });
-    }
+    validarCartasExistentesNoCatalogo(deckIds1, dadosCompletosCartas, userId1, deckId1);
+    validarCartasExistentesNoCatalogo(deckIds2, dadosCompletosCartas, userId2, deckId2);
 
     baralhoCompleto1 = deckIds1.map((id) => normalizeCardAbilities(dadosCompletosCartas[id]));
     baralhoCompleto2 = deckIds2.map((id) => normalizeCardAbilities(dadosCompletosCartas[id]));
