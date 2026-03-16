@@ -305,3 +305,7 @@ npm run check
 As convenções de branch/commit e o checklist de release estão em [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 As instruções para configurar bloqueio de merge sem CI verde estão em [`.github/branch-protection.md`](./.github/branch-protection.md).
+
+## Habilidades e hooks
+
+A documentação do sistema de habilidades, hooks, ordem de resolução e conflitos está em `docs/abilities.md`.

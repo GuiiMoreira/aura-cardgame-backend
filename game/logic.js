@@ -1,5 +1,7 @@
 const admin = require('firebase-admin');
 
+const { normalizeCardAbilities } = require('./abilities');
+
 const REGRAS_DECK = {
   TAMANHO_MINIMO: 30,
   TAMANHO_MAXIMO: 30,
@@ -130,8 +132,8 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
       });
     }
 
-    baralhoCompleto1 = deckIds1.map((id) => dadosCompletosCartas[id]);
-    baralhoCompleto2 = deckIds2.map((id) => dadosCompletosCartas[id]);
+    baralhoCompleto1 = deckIds1.map((id) => normalizeCardAbilities(dadosCompletosCartas[id]));
+    baralhoCompleto2 = deckIds2.map((id) => normalizeCardAbilities(dadosCompletosCartas[id]));
   } else {
     console.log('Aviso: um ou ambos os baralhos carregados estão vazios.');
   }

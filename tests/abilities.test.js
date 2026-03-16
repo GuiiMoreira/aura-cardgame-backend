@@ -2,7 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { passarTurno, declararAtaque, jogarCarta } = require('../game/actions');
-const { abilityRegistry, getAbilitiesFromCard } = require('../game/abilities');
+const {
+  abilityRegistry,
+  getAbilitiesFromCard,
+  parseTextualMechanics,
+  normalizeCardAbilities,
+} = require('../game/abilities');
 
 function criarEstadoBase() {
   return {
@@ -49,6 +54,23 @@ test('IMPACTO ativa no onSummon ao jogar carta', () => {
   assert.equal(estado.jogadores.p2.vida, 93);
 });
 
+test('INSTAVEL ativa no beforeAttack', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({
+    id: 'atk',
+    Força: 15,
+    Vida: 40,
+    exaustao: false,
+    habilidades: [{ tipo: 'INSTAVEL', valor: 2 }],
+  });
+  estado.campo.p2.push({ id: 'def', Força: 10, Vida: 40, exaustao: false });
+
+  declararAtaque(estado, 'p1', 'atk', 'def');
+
+  assert.equal(estado.campo.p1[0].Vida, 10);
+  assert.equal(estado.campo.p2[0].Vida, 5);
+});
+
 test('ULTIMO_SUSPIRO ativa no onDeath com ordem de resolução previsível', () => {
   const estado = criarEstadoBase();
   estado.campo.p1.push({
@@ -91,6 +113,22 @@ test('REGENERACAO ativa no onTurnStart durante passarTurno', () => {
   assert.equal(estado.campo.p2[0].Vida, 13);
 });
 
+test('RECARREGAVEL reduz turnosRecarga no onTurnStart', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p2.push({
+    id: 'canhoneiro',
+    Força: 5,
+    Vida: 10,
+    exaustao: true,
+    turnosRecarga: 2,
+    habilidades: [{ tipo: 'RECARREGAVEL', valor: 1 }],
+  });
+
+  passarTurno(estado, 'p1');
+
+  assert.equal(estado.campo.p2[0].turnosRecarga, 1);
+});
+
 test('afterAttack é integrado em declararAtaque', () => {
   const estado = criarEstadoBase();
   const marcador = [];
@@ -128,4 +166,24 @@ test('normalização de habilidades aceita params.valor e ordena por prioridade/
   assert.deepEqual(habilidades.map((h) => h.params.valor), [1, 2, 3]);
   assert.deepEqual(habilidades.map((h) => h.prioridade), [0, 5, 5]);
   assert.deepEqual(habilidades.map((h) => h.sourceIndex), [0, 1, 2]);
+});
+
+test('parser textual converte mecânica com fallback e ignora tokens inválidos', () => {
+  const habilidades = parseTextualMechanics('Impacto (2); Desconhecida (9) | Recarregável (1)');
+
+  assert.deepEqual(
+    habilidades.map((h) => [h.tipo, h.params.valor]),
+    [
+      ['IMPACTO', 2],
+      ['RECARREGAVEL', 1],
+    ]
+  );
+});
+
+test('normalizeCardAbilities preenche habilidades a partir de Mecânica', () => {
+  const carta = normalizeCardAbilities({ id: 'c1', 'Mecânica': 'Último Suspiro (3)' });
+
+  assert.equal(carta.habilidades.length, 1);
+  assert.equal(carta.habilidades[0].tipo, 'ULTIMO_SUSPIRO');
+  assert.equal(carta.habilidades[0].params.valor, 3);
 });
