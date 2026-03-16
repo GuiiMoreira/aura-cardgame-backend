@@ -10,6 +10,7 @@ function withProtocol(payload = {}) {
 
 const jogosAtivos = {};
 const salaAtivaPorUid = {};
+const conexoesPorSala = {};
 let filaDeEspera = null;
 const TEMPO_LIMITE_RECONEXAO_MS = 60 * 1000;
 const TTL_PARTIDA_ABANDONADA_MS = 24 * 60 * 60 * 1000;
@@ -130,17 +131,49 @@ function limparTimerReconexao(metaJogador) {
   }
 }
 
+function garantirConexaoDaSala(sala) {
+  if (!sala) return null;
+  if (!conexoesPorSala[sala]) {
+    conexoesPorSala[sala] = {};
+  }
+
+  return conexoesPorSala[sala];
+}
+
+function definirJogadorNaSala(sala, uid, dados = {}) {
+  if (!sala || !uid) return null;
+
+  const conexoesDaSala = garantirConexaoDaSala(sala);
+  const atual = conexoesDaSala[uid] || { socketId: null, conectado: false, timerReconexao: null };
+  conexoesDaSala[uid] = {
+    ...atual,
+    ...dados,
+  };
+
+  return conexoesDaSala[uid];
+}
+
+function limparConexoesDaSala(sala) {
+  const conexoesDaSala = conexoesPorSala[sala];
+  if (!conexoesDaSala) return;
+
+  Object.values(conexoesDaSala).forEach((metaJogador) => limparTimerReconexao(metaJogador));
+  delete conexoesPorSala[sala];
+}
+
 function calcularExpiracaoTTL() {
   return new Date(Date.now() + TTL_PARTIDA_ABANDONADA_MS);
 }
 
 function montarSnapshotPartida(sala, jogo, extras = {}) {
+  const conexoesDaSala = conexoesPorSala[sala] || jogo.jogadores || {};
+
   return {
     sala,
     estado: construirEstadoSimplificado(jogo.estado),
     estadoCompleto: jogo.estado,
     jogadores: Object.fromEntries(
-      Object.entries(jogo.jogadores || {}).map(([uid, jogador]) => [
+      Object.entries(conexoesDaSala).map(([uid, jogador]) => [
         uid,
         {
           conectado: Boolean(jogador?.conectado),
@@ -180,8 +213,9 @@ async function encerrarPartida(io, db, sala, payload, logger = baseLogger) {
   const jogo = jogosAtivos[sala];
   if (!jogo) return;
 
-  Object.values(jogo.jogadores || {}).forEach((metaJogador) => limparTimerReconexao(metaJogador));
-  Object.keys(jogo.jogadores || {}).forEach((uid) => limparSalaAtivaDoJogador(uid, sala));
+  const conexoesDaSala = conexoesPorSala[sala] || jogo.jogadores || {};
+  Object.values(conexoesDaSala).forEach((metaJogador) => limparTimerReconexao(metaJogador));
+  Object.keys(conexoesDaSala).forEach((uid) => limparSalaAtivaDoJogador(uid, sala));
 
   try {
     await moverPartidaParaHistorico(db, sala, jogo, payload);
@@ -191,13 +225,15 @@ async function encerrarPartida(io, db, sala, payload, logger = baseLogger) {
 
   io.to(sala).emit('fim_de_jogo', withProtocol({ ...payload, sala, matchId: sala }));
   delete jogosAtivos[sala];
+  limparConexoesDaSala(sala);
   updateActiveMatchesMetric();
   logger.info('Partida encerrada.', { sala, matchId: sala, payload });
 }
 
 function buscarJogoPorSocketId(socketId) {
-  return Object.entries(jogosAtivos).find(([, jogo]) => {
-    return Object.values(jogo.jogadores || {}).some(
+  return Object.entries(jogosAtivos).find(([sala, jogo]) => {
+    const conexoesDaSala = conexoesPorSala[sala] || jogo.jogadores || {};
+    return Object.values(conexoesDaSala).some(
       (metaJogador) => metaJogador.socketId === socketId
     );
   });
@@ -271,6 +307,7 @@ async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
 
     const jogadores = Object.keys(estado.jogadores).reduce((acc, uid) => {
       acc[uid] = { socketId: null, conectado: false, timerReconexao: null };
+      definirJogadorNaSala(sala, uid, { socketId: null, conectado: false, timerReconexao: null });
       registrarSalaAtivaDoJogador(uid, sala, null);
       return acc;
     }, {});
@@ -326,6 +363,7 @@ async function limparPartidasAbandonadas(db, logger = baseLogger) {
       limparSalaAtivaDoJogador(uid, sala);
     });
     delete jogosAtivos[sala];
+    limparConexoesDaSala(sala);
     batch.delete(doc.ref);
   });
   await batch.commit();
@@ -450,6 +488,16 @@ function gerenciarSockets(io, db, logger = baseLogger) {
               [u2]: { socketId: j2Socket.id, conectado: true, timerReconexao: null },
             },
           };
+          definirJogadorNaSala(nomeDaSala, u1, {
+            socketId: j1Socket.id,
+            conectado: true,
+            timerReconexao: null,
+          });
+          definirJogadorNaSala(nomeDaSala, u2, {
+            socketId: j2Socket.id,
+            conectado: true,
+            timerReconexao: null,
+          });
           registrarSalaAtivaDoJogador(u1, nomeDaSala, j1Socket.id);
           registrarSalaAtivaDoJogador(u2, nomeDaSala, j2Socket.id);
           updateActiveMatchesMetric();
@@ -515,7 +563,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           const jogo = jogosAtivos[sala];
           if (!jogo) return;
 
-          const jogador = jogo.jogadores?.[userId];
+          const jogador = conexoesPorSala[sala]?.[userId] || jogo.jogadores?.[userId];
           if (
             !userId ||
             !jogador ||
@@ -605,6 +653,11 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         limparTimerReconexao(jogador);
         jogador.socketId = socket.id;
         jogador.conectado = true;
+        definirJogadorNaSala(salaAlvo, userId, {
+          socketId: socket.id,
+          conectado: true,
+          timerReconexao: jogador.timerReconexao,
+        });
         registrarSalaAtivaDoJogador(userId, salaAlvo, socket.id);
         socket.join(salaAlvo);
 
@@ -695,7 +748,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
       if (!jogoEncontrado) return;
 
       const [sala, jogo] = jogoEncontrado;
-      const jogador = userId ? jogo.jogadores?.[userId] : null;
+      const jogador = userId ? conexoesPorSala[sala]?.[userId] || jogo.jogadores?.[userId] : null;
       if (!jogador || jogador.socketId !== socket.id) return;
 
       jogador.conectado = false;
@@ -704,11 +757,11 @@ function gerenciarSockets(io, db, logger = baseLogger) {
       limparTimerReconexao(jogador);
       jogador.timerReconexao = setTimeout(async () => {
         const jogoAtual = jogosAtivos[sala];
-        const jogadorAtual = jogoAtual?.jogadores?.[userId];
+        const jogadorAtual = conexoesPorSala[sala]?.[userId] || jogoAtual?.jogadores?.[userId];
         if (!jogadorAtual || jogadorAtual.conectado) return;
 
         const oponenteId = Object.keys(jogoAtual.estado.jogadores).find((id) => id !== userId);
-        const payloadFim = { motivo: 'desconexao', jogadorDesconectado: userId, requestId };
+        const payloadFim = { motivo: 'abandono/desconexao', jogadorDesconectado: userId, requestId };
         if (oponenteId) payloadFim.vencedor = oponenteId;
         await encerrarPartida(io, db, sala, payloadFim, logger);
       }, TEMPO_LIMITE_RECONEXAO_MS);
