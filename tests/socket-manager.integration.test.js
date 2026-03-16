@@ -456,6 +456,29 @@ test('startup ignora e remove partidas expiradas ao carregar recuperáveis', asy
   assert.equal(db.state.partidas_ativas.sala_valida.status, 'recuperavel');
 });
 
+test('startup recupera partidas pausadas e pendentes', async () => {
+  const db = criarDbFake();
+
+  db.state.partidas_ativas.sala_pausada = {
+    sala: 'sala_pausada',
+    status: 'pausada',
+    estadoCompleto: { jogadores: { p1: { vida: 100 }, p2: { vida: 100 } } },
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+
+  db.state.partidas_ativas.sala_pendente = {
+    sala: 'sala_pendente',
+    status: 'pendente',
+    estadoCompleto: { jogadores: { p1: { vida: 100 }, p2: { vida: 100 } } },
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+
+  const carregadas = await gerenciarSockets.carregarPartidasRecuperaveis(db, noopLogger);
+  assert.equal(carregadas, 2);
+  assert.equal(db.state.partidas_ativas.sala_pausada.status, 'recuperavel');
+  assert.equal(db.state.partidas_ativas.sala_pendente.status, 'recuperavel');
+});
+
 test('limpeza TTL remove partidas órfãs expiradas', async () => {
   const db = criarDbFake();
   const { limparPartidasAbandonadas } = gerenciarSockets.__testables;
