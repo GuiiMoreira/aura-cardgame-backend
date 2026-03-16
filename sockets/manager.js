@@ -3,6 +3,7 @@ const { passarTurno, jogarCarta, atacarFortaleza, declararAtaque } = require('..
 
 const jogosAtivos = {};
 let filaDeEspera = null;
+const TEMPO_LIMITE_RECONEXAO_MS = 60 * 1000;
 
 function emitirErroPartida(socket, motivo) {
     socket.emit('erro_partida', { motivo });
@@ -14,6 +15,28 @@ function payloadInvalido(socket, mensagem) {
 
 function getSocketUid(socket) {
     return socket.user?.uid || null;
+}
+
+function limparTimerReconexao(metaJogador) {
+    if (metaJogador?.timerReconexao) {
+        clearTimeout(metaJogador.timerReconexao);
+        metaJogador.timerReconexao = null;
+    }
+}
+
+function encerrarPartida(io, sala, payload) {
+    const jogo = jogosAtivos[sala];
+    if (!jogo) return;
+
+    Object.values(jogo.jogadores || {}).forEach((metaJogador) => limparTimerReconexao(metaJogador));
+    io.to(sala).emit('fim_de_jogo', payload);
+    delete jogosAtivos[sala];
+}
+
+function buscarJogoPorSocketId(socketId) {
+    return Object.entries(jogosAtivos).find(([, jogo]) => {
+        return Object.values(jogo.jogadores || {}).some((metaJogador) => metaJogador.socketId === socketId);
+    });
 }
 
 function gerenciarSockets(io, db) {
@@ -68,8 +91,13 @@ function gerenciarSockets(io, db) {
 
                 try {
                     const estadoInicial = await criarEstadoInicialDoJogo(db, u1, d1, u2, d2);
-                    const socketMap = { [j1Socket.id]: u1, [j2Socket.id]: u2 };
-                    jogosAtivos[nomeDaSala] = { estado: estadoInicial, socketIdParaUid: socketMap };
+                    jogosAtivos[nomeDaSala] = {
+                        estado: estadoInicial,
+                        jogadores: {
+                            [u1]: { socketId: j1Socket.id, conectado: true, timerReconexao: null },
+                            [u2]: { socketId: j2Socket.id, conectado: true, timerReconexao: null },
+                        },
+                    };
                     io.to(nomeDaSala).emit('partida_encontrada', { sala: nomeDaSala, estado: estadoInicial });
                     console.log(`[MATCH] Partida criada e enviada com sucesso para a sala ${nomeDaSala}`);
                 } catch (error) {
@@ -91,20 +119,52 @@ function gerenciarSockets(io, db) {
                 if (!jogo) return;
 
                 const userId = getSocketUid(socket);
-                const esperado = jogo.socketIdParaUid[socket.id];
-                if (!userId || esperado !== userId || userId !== jogo.estado.turno) return;
+                const jogador = jogo.jogadores?.[userId];
+                if (!userId || !jogador || jogador.socketId !== socket.id || !jogador.conectado || userId !== jogo.estado.turno) return;
 
                 logicaAcao(jogo.estado, userId, dados);
 
                 const oponenteId = Object.keys(jogo.estado.jogadores).find((id) => id !== userId);
                 if (jogo.estado.jogadores[oponenteId].vida <= 0) {
-                    io.to(sala).emit('fim_de_jogo', { vencedor: userId });
-                    delete jogosAtivos[sala];
+                    encerrarPartida(io, sala, { vencedor: userId });
                 } else {
                     io.to(sala).emit('estado_atualizado', jogo.estado);
                 }
             });
         };
+
+        socket.on('reconectar_partida', ({ sala } = {}) => {
+            if (typeof sala !== 'string') {
+                payloadInvalido(socket, 'Payload inválido para reconectar_partida.');
+                return;
+            }
+
+            const jogo = jogosAtivos[sala];
+            if (!jogo) {
+                emitirErroPartida(socket, 'Partida não encontrada para reconexão.');
+                return;
+            }
+
+            const userId = getSocketUid(socket);
+            if (!userId) {
+                emitirErroPartida(socket, 'Socket não autenticado para reconexão.');
+                return;
+            }
+
+            const jogador = jogo.jogadores?.[userId];
+            if (!jogador) {
+                emitirErroPartida(socket, 'Jogador não pertence a esta partida.');
+                return;
+            }
+
+            limparTimerReconexao(jogador);
+            jogador.socketId = socket.id;
+            jogador.conectado = true;
+            socket.join(sala);
+
+            io.to(sala).emit('estado_atualizado', jogo.estado);
+            console.log(`[RECONEXÃO] Jogador ${userId} reconectado na sala ${sala} com socket ${socket.id}`);
+        });
 
         criarManipuladorDeAcao('passar_turno', (estado, userId) => {
             passarTurno(estado, userId);
@@ -141,6 +201,29 @@ function gerenciarSockets(io, db) {
                 filaDeEspera = null;
                 console.log('[FILA] Fila foi limpa.');
             }
+
+            const jogoEncontrado = buscarJogoPorSocketId(socket.id);
+            if (!jogoEncontrado) return;
+
+            const [sala, jogo] = jogoEncontrado;
+            const userId = getSocketUid(socket);
+            const jogador = userId ? jogo.jogadores?.[userId] : null;
+            if (!jogador || jogador.socketId !== socket.id) return;
+
+            jogador.conectado = false;
+            limparTimerReconexao(jogador);
+            jogador.timerReconexao = setTimeout(() => {
+                const jogoAtual = jogosAtivos[sala];
+                const jogadorAtual = jogoAtual?.jogadores?.[userId];
+                if (!jogadorAtual || jogadorAtual.conectado) return;
+
+                const oponenteId = Object.keys(jogoAtual.estado.jogadores).find((id) => id !== userId);
+                const payloadFim = { motivo: 'desconexao', jogadorDesconectado: userId };
+                if (oponenteId) payloadFim.vencedor = oponenteId;
+                encerrarPartida(io, sala, payloadFim);
+            }, TEMPO_LIMITE_RECONEXAO_MS);
+
+            console.log(`[DESCONEXÃO] Jogador ${userId} desconectado da sala ${sala}. Aguardando reconexão por ${TEMPO_LIMITE_RECONEXAO_MS / 1000}s.`);
         });
     });
 }
