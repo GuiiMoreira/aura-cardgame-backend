@@ -14,6 +14,7 @@ const conexoesPorSala = {};
 let filaDeEspera = null;
 const TEMPO_LIMITE_RECONEXAO_MS = 60 * 1000;
 const TTL_PARTIDA_ABANDONADA_MS = 24 * 60 * 60 * 1000;
+const STATUS_RECUPERAVEIS_STARTUP = ['ativa', 'recuperavel', 'pausada', 'pendente'];
 
 function construirEstadoSimplificado(estado = {}) {
   const jogadores = Object.fromEntries(
@@ -271,7 +272,7 @@ function buscarJogoPorUid(userId) {
 async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
   const snapshot = await db
     .collection('partidas_ativas')
-    .where('status', 'in', ['ativa', 'recuperavel'])
+    .where('status', 'in', STATUS_RECUPERAVEIS_STARTUP)
     .get();
 
   if (snapshot.empty) {
@@ -322,13 +323,15 @@ async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
   });
 
   salasValidas.forEach(({ doc }) => {
+    const data = doc.data() || {};
+    const estado = data.estadoCompleto || data.estado || {};
     batch.set(
       doc.ref,
       {
         status: 'recuperavel',
         recuperavel: true,
         jogadores: Object.fromEntries(
-          Object.keys(doc.data()?.estado?.jogadores || {}).map((uid) => [
+          Object.keys(estado.jogadores || {}).map((uid) => [
             uid,
             { conectado: false, socketId: null },
           ])
@@ -573,7 +576,9 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           )
             return;
 
-          logicaAcao(jogo.estado, userId, payload);
+          const acaoValida = logicaAcao(jogo.estado, userId, payload);
+          if (acaoValida === false) return;
+
           await persistirPartidaAtiva(db, sala, jogo, { status: 'ativa', recuperavel: true });
 
           const oponenteId = Object.keys(jogo.estado.jogadores).find((id) => id !== userId);
@@ -692,9 +697,10 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           { requestId: createRequestId(), userId, sala: null, matchId: null },
           logger
         );
-        return;
+        return false;
       }
       jogarCarta(estado, userId, cartaId);
+      return true;
     });
 
     criarManipuladorDeAcao('atacar_fortaleza', (estado, userId, { atacantesIds }) => {
@@ -705,9 +711,10 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           { requestId: createRequestId(), userId, sala: null, matchId: null },
           logger
         );
-        return;
+        return false;
       }
       atacarFortaleza(estado, userId, atacantesIds);
+      return true;
     });
 
     criarManipuladorDeAcao('declarar_ataque', (estado, userId, { atacanteId, alvoId }) => {
@@ -718,9 +725,10 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           { requestId: createRequestId(), userId, sala: null, matchId: null },
           logger
         );
-        return;
+        return false;
       }
       declararAtaque(estado, userId, atacanteId, alvoId);
+      return true;
     });
 
     socket.on('disconnect', () => {
