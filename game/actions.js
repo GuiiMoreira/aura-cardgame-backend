@@ -20,6 +20,12 @@ function passarTurno(estado, userId) {
 
   estado.campo[proximoJogadorId].forEach((carta) => {
     carta.exaustao = false;
+
+    runHookForCard(carta, 'onTurnStart', {
+      estado,
+      userId: proximoJogadorId,
+      opponentId: getOponenteId(estado, proximoJogadorId),
+    });
   });
 
   estado.turno = proximoJogadorId;

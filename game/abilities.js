@@ -1,8 +1,9 @@
+const HOOKS = ['onSummon', 'beforeAttack', 'afterAttack', 'onDeath', 'onTurnStart'];
+
 const abilityRegistry = {
   INSTAVEL: {
     beforeAttack: ({ sourceCard, targetCard, ability }) => {
-      const valor = Number(ability.valor) || 0;
-      const dano = valor * 10;
+      const dano = ability.params.valor * 10;
       if (dano <= 0 || !sourceCard || !targetCard) return;
 
       sourceCard.Vida -= dano;
@@ -11,21 +12,54 @@ const abilityRegistry = {
   },
   IMPACTO: {
     onSummon: ({ estado, opponentId, ability }) => {
-      const valor = Number(ability.valor) || 0;
-      if (valor <= 0 || !opponentId) return;
+      const dano = ability.params.valor;
+      if (dano <= 0 || !opponentId) return;
 
-      estado.jogadores[opponentId].vida -= valor;
+      estado.jogadores[opponentId].vida -= dano;
     },
   },
   ULTIMO_SUSPIRO: {
     onDeath: ({ estado, opponentId, ability }) => {
-      const valor = Number(ability.valor) || 0;
-      if (valor <= 0 || !opponentId) return;
+      const dano = ability.params.valor;
+      if (dano <= 0 || !opponentId) return;
 
-      estado.jogadores[opponentId].vida -= valor;
+      estado.jogadores[opponentId].vida -= dano;
+    },
+  },
+  REGENERACAO: {
+    onTurnStart: ({ sourceCard, ability }) => {
+      const cura = ability.params.valor;
+      if (cura <= 0 || !sourceCard) return;
+
+      sourceCard.Vida += cura;
     },
   },
 };
+
+function normalizeAbility(rawAbility, index) {
+  if (!rawAbility || typeof rawAbility !== 'object') {
+    return null;
+  }
+
+  const tipo = typeof rawAbility.tipo === 'string' ? rawAbility.tipo.trim().toUpperCase() : '';
+  if (!tipo) {
+    return null;
+  }
+
+  const valorBruto = rawAbility.params?.valor ?? rawAbility.valor ?? 0;
+  const valor = Number(valorBruto);
+  const prioridadeBruta = rawAbility.prioridade ?? 0;
+  const prioridade = Number(prioridadeBruta);
+
+  return {
+    tipo,
+    prioridade: Number.isFinite(prioridade) ? prioridade : 0,
+    sourceIndex: index,
+    params: {
+      valor: Number.isFinite(valor) ? valor : 0,
+    },
+  };
+}
 
 function getAbilitiesFromCard(card = {}) {
   if (!Array.isArray(card.habilidades)) {
@@ -33,20 +67,26 @@ function getAbilitiesFromCard(card = {}) {
   }
 
   return card.habilidades
-    .map((ability) => {
-      if (!ability || typeof ability !== 'object') return null;
-      const tipo = typeof ability.tipo === 'string' ? ability.tipo.trim().toUpperCase() : null;
-      if (!tipo) return null;
-      return {
-        tipo,
-        valor: ability.valor,
-      };
-    })
+    .map((ability, index) => normalizeAbility(ability, index))
     .filter(Boolean);
 }
 
+function sortAbilities(abilities) {
+  return [...abilities].sort((a, b) => {
+    if (a.prioridade !== b.prioridade) {
+      return b.prioridade - a.prioridade;
+    }
+
+    return a.sourceIndex - b.sourceIndex;
+  });
+}
+
 function runHookForCard(card, hook, context) {
-  const abilities = getAbilitiesFromCard(card);
+  if (!HOOKS.includes(hook)) {
+    return;
+  }
+
+  const abilities = sortAbilities(getAbilitiesFromCard(card));
 
   abilities.forEach((ability) => {
     const implementation = abilityRegistry[ability.tipo];
@@ -63,6 +103,7 @@ function runHookForCard(card, hook, context) {
 }
 
 module.exports = {
+  HOOKS,
   abilityRegistry,
   getAbilitiesFromCard,
   runHookForCard,
