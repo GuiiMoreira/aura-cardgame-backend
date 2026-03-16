@@ -219,6 +219,8 @@ test('integração socket: buscar_partida -> ações -> fim_de_jogo', async () =
     const partidaP1 = await waitForEvent(p1, 'partida_encontrada');
     const partidaP2 = await waitForEvent(p2, 'partida_encontrada');
 
+    assert.equal(partidaP1.protocolVersion, '1.1.0');
+    assert.equal(partidaP2.protocolVersion, '1.1.0');
     assert.equal(partidaP1.sala, partidaP2.sala);
     assert.equal(partidaP1.estado.turno, 'p1');
 
@@ -259,6 +261,7 @@ test('integração socket: payload inválido em eventos e servidor continua est�
   try {
     p1.emit('buscar_partida', {});
     const erroBusca = await waitForEvent(p1, 'erro_partida');
+    assert.equal(erroBusca.protocolVersion, '1.1.0');
     assert.match(erroBusca.motivo, /deckId é obrigatório/);
 
     p1.emit('buscar_partida', { deckId: 'deck_p1' });

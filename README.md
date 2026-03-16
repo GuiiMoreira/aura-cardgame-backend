@@ -128,16 +128,14 @@ O servidor iniciará na porta `3000` (configurável via `PORT`).
 
 ## 🔌 APIs de Socket.IO (Eventos)
 
-### Autenticação no Socket.IO
+O contrato oficial e consolidado está em **`docs/socket-contract.md`**.
 
-O backend exige autenticação em toda conexão Socket.IO:
+### Handshake (cliente → servidor)
 
-- No `io.use`, o servidor lê `socket.handshake.auth.token`.
-- O token é validado via `admin.auth().verifyIdToken(token)`.
-- Em caso de sucesso, o socket recebe `socket.user = { uid, ...claims }`.
-- Em caso de falha/ausência de token, o middleware interrompe a conexão no handshake com `next(new Error(...))` e o cliente recebe `connect_error`.
+- `auth.token` (**obrigatório**): Firebase ID Token.
+- `auth.protocolVersion` (**recomendado**): versão do protocolo (atual: `1.1.0`).
 
-Exemplo de conexão no cliente:
+Exemplo:
 
 ```js
 import { io } from 'socket.io-client';
@@ -145,30 +143,17 @@ import { io } from 'socket.io-client';
 const socket = io('http://localhost:3000', {
   auth: {
     token: firebaseIdToken,
+    protocolVersion: '1.1.0',
   },
 });
-
-socket.emit('buscar_partida', { deckId: 'deck-123' });
 ```
 
-### Emissão do cliente → servidor
+### Compatibilidade retroativa mínima
 
-- Handshake de conexão: `auth: { token: <Firebase ID Token> }`
-- `buscar_partida` { deckId }
-- `passar_turno` { sala }
-- `jogar_carta` { sala, cartaId }
-- `atacar_fortaleza` { sala, atacantesIds: [id, ...] }
-- `declarar_ataque` { sala, atacanteId, alvoId }
-
-### Eventos do servidor → cliente
-
-- `status_matchmaking` (status durante fila)
-- `partida_encontrada` { sala, estado }
-- `estado_atualizado` (emitido após cada ação válida)
-- `fim_de_jogo` { vencedor }
-- `erro_partida` { motivo }
-
----
+- Se `protocolVersion` não for enviado, o servidor aceita em modo legado (`legacy-v1`).
+- Eventos não foram renomeados para evitar quebra no frontend.
+- Respostas do servidor incluem `protocolVersion` para permitir evolução controlada de regras.
+- Mudanças futuras devem preservar contratos existentes e introduzir campos novos de forma aditiva sempre que possível.
 
 ## 🧱 Regras de domínio (módulo `game/actions.js`)
 
