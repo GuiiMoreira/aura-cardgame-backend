@@ -64,6 +64,27 @@ const io = new Server(server, {
     },
 });
 
+io.use(async (socket, next) => {
+    const token = socket.handshake?.auth?.token;
+
+    if (!token || typeof token !== 'string') {
+        socket.authError = 'Token de autenticação ausente ou inválido.';
+        return next();
+    }
+
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(token);
+        socket.user = {
+            uid: decodedToken.uid,
+            ...decodedToken,
+        };
+    } catch (error) {
+        socket.authError = 'Token de autenticação inválido ou expirado.';
+    }
+
+    return next();
+});
+
 const PORT = process.env.PORT || 3000;
 
 gerenciarSockets(io, db);

@@ -4,16 +4,42 @@ const { passarTurno, jogarCarta, atacarFortaleza, declararAtaque } = require('..
 const jogosAtivos = {};
 let filaDeEspera = null;
 
+function emitirErroPartida(socket, motivo) {
+    socket.emit('erro_partida', { motivo });
+}
+
 function payloadInvalido(socket, mensagem) {
-    socket.emit('erro_partida', { mensagem });
+    emitirErroPartida(socket, mensagem);
+}
+
+function getSocketUid(socket) {
+    return socket.user?.uid || null;
 }
 
 function gerenciarSockets(io, db) {
     io.on('connection', (socket) => {
-        console.log(`[CONEXÃO] Jogador conectado: ${socket.id}`);
+        if (!socket.user) {
+            const motivo = socket.authError || 'Falha na autenticação do socket.';
+            emitirErroPartida(socket, motivo);
+            socket.disconnect(true);
+            return;
+        }
 
-        socket.on('buscar_partida', async ({ deckId, userId } = {}) => {
-            if (!deckId || !userId) return;
+        const socketUid = getSocketUid(socket);
+        console.log(`[CONEXÃO] Jogador autenticado conectado: ${socket.id} (uid: ${socketUid})`);
+
+        socket.on('buscar_partida', async ({ deckId } = {}) => {
+            const userId = getSocketUid(socket);
+            if (!userId) {
+                emitirErroPartida(socket, 'Socket não autenticado.');
+                socket.disconnect(true);
+                return;
+            }
+
+            if (!deckId) {
+                payloadInvalido(socket, 'deckId é obrigatório para buscar_partida.');
+                return;
+            }
 
             if (filaDeEspera && filaDeEspera.userId === userId) {
                 console.log(`[FILA] Jogador ${userId} já está na fila. Ignorando nova requisição.`);
@@ -48,7 +74,7 @@ function gerenciarSockets(io, db) {
                     console.log(`[MATCH] Partida criada e enviada com sucesso para a sala ${nomeDaSala}`);
                 } catch (error) {
                     console.error('Erro crítico ao criar o estado do jogo:', error);
-                    io.to(nomeDaSala).emit('erro_partida', { mensagem: 'Não foi possível carregar os baralhos.' });
+                    io.to(nomeDaSala).emit('erro_partida', { motivo: 'Não foi possível carregar os baralhos.' });
                 }
             }
         });
@@ -64,8 +90,9 @@ function gerenciarSockets(io, db) {
                 const jogo = jogosAtivos[sala];
                 if (!jogo) return;
 
-                const userId = jogo.socketIdParaUid[socket.id];
-                if (!userId || userId !== jogo.estado.turno) return;
+                const userId = getSocketUid(socket);
+                const esperado = jogo.socketIdParaUid[socket.id];
+                if (!userId || esperado !== userId || userId !== jogo.estado.turno) return;
 
                 logicaAcao(jogo.estado, userId, dados);
 

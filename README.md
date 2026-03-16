@@ -18,8 +18,10 @@ Backend em Node.js para um jogo de cartas online em tempo real, usando Socket.IO
 
 ## 🧠 Como o jogo funciona (visão geral)
 
-1. **Matchmaking rápido (1v1)**
-   - Um jogador envia `buscar_partida` com `userId` e `deckId`.
+1. **Autenticação + matchmaking rápido (1v1)**
+   - O cliente conecta no Socket.IO enviando `auth.token` (Firebase ID Token).
+   - O servidor valida o token com Firebase Auth Admin SDK e usa sempre `socket.user.uid` como identidade do jogador.
+   - Depois de autenticado, o jogador envia `buscar_partida` apenas com `deckId`.
    - O servidor faz uma fila simples de um jogador. Quando há dois jogadores, forma uma sala e cria a partida.
 
 2. **Criação do estado inicial**
@@ -95,8 +97,33 @@ O servidor iniciará na porta `3000` (configurável via `PORT`).
 
 ## 🔌 APIs de Socket.IO (Eventos)
 
+### Autenticação no Socket.IO
+
+O backend exige autenticação em toda conexão Socket.IO:
+
+- No `io.use`, o servidor lê `socket.handshake.auth.token`.
+- O token é validado via `admin.auth().verifyIdToken(token)`.
+- Em caso de sucesso, o socket recebe `socket.user = { uid, ...claims }`.
+- Em caso de falha/ausência de token, o servidor emite `erro_partida` com `motivo` claro e desconecta o cliente.
+
+Exemplo de conexão no cliente:
+
+```js
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3000', {
+  auth: {
+    token: firebaseIdToken,
+  },
+});
+
+socket.emit('buscar_partida', { deckId: 'deck-123' });
+```
+
+
 ### Emissão do cliente → servidor
-- `buscar_partida` { userId, deckId }
+- Handshake de conexão: `auth: { token: <Firebase ID Token> }`
+- `buscar_partida` { deckId }
 - `passar_turno` { sala }
 - `jogar_carta` { sala, cartaId }
 - `atacar_fortaleza` { sala, atacantesIds: [id, ...] }
@@ -107,7 +134,7 @@ O servidor iniciará na porta `3000` (configurável via `PORT`).
 - `partida_encontrada` { sala, estado }
 - `estado_atualizado` (emitido após cada ação válida)
 - `fim_de_jogo` { vencedor }
-- `erro_partida` { mensagem }
+- `erro_partida` { motivo }
 
 ---
 
