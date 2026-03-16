@@ -7,8 +7,7 @@ import { MockSocketClient, startMockServer } from './mock/mock-server';
 import { createSocketClient, type AuraSocket } from './socket/socket-client';
 import type { FlowStep, MatchEventsState, MatchState, SessionState } from './types/app-state';
 import { SOCKET_CONTRACT_VERSION } from './contracts/socket-contracts';
-
-const BACKEND_SOCKET_URL = import.meta.env.VITE_SOCKET_URL ?? 'http://localhost:3000';
+import { API_URL } from './config';
 
 export default function App() {
   const [step, setStep] = useState<FlowStep>('login');
@@ -37,7 +36,7 @@ export default function App() {
     }
 
     socketRef.current = createSocketClient({
-      url: BACKEND_SOCKET_URL,
+      url: API_URL,
       token: newSession.token,
     });
   };
