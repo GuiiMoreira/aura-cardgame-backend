@@ -110,6 +110,26 @@ O servidor iniciará na porta `3000` (configurável via `PORT`).
 
 ---
 
+## 🧱 Regras de domínio (módulo `game/actions.js`)
+
+As regras críticas de partida agora ficam isoladas em funções de domínio puras:
+
+- `passarTurno(estado, userId)`
+- `jogarCarta(estado, userId, cartaId)`
+- `atacarFortaleza(estado, userId, atacantesIds)`
+- `declararAtaque(estado, userId, atacanteId, alvoId)`
+
+O arquivo `sockets/manager.js` ficou focado em validar payload/socket/contexto e delegar as regras para o domínio.
+
+## 🧪 Testes
+
+```bash
+npm test
+npm run test:watch
+```
+
+Os testes cobrem fluxos críticos: consumo de recursos, exaustão de cartas, dano e condição de fim de jogo.
+
 ## 🧪 Desenvolvimento
 
 - Use `data/mockDeck.js` se quiser testar a lógica localmente sem precisar do Firestore.
