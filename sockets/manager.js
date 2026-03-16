@@ -1,4 +1,10 @@
 const { criarEstadoInicialDoJogo } = require('../game/logic');
+const {
+    passarTurno,
+    jogarCarta,
+    atacarFortaleza,
+    declararAtaque
+} = require('../game/actions');
 
 const jogosAtivos = {};
 const socketIdParaUserId = {};
@@ -34,41 +40,6 @@ function validarStringObrigatoria(socket, nomeAcao, valor, campo) {
     }
 
     return true;
-}
-
-function moverMortosParaCemiterio(estado, jogadorId) {
-    estado.campo[jogadorId] = estado.campo[jogadorId].filter(carta => {
-        if (carta.Vida <= 0) {
-            estado.jogadores[jogadorId].cemiterio.push(carta);
-            return false;
-        }
-        return true;
-    });
-}
-
-function resolverCombateDeclarado(estado, userId, atacanteId, alvoId) {
-    const oponenteId = Object.keys(estado.jogadores).find(id => id !== userId);
-    const cartaAtacante = estado.campo[userId].find(c => c.id === atacanteId);
-    const cartaAlvo = estado.campo[oponenteId].find(c => c.id === alvoId);
-    if (!cartaAtacante || !cartaAlvo || cartaAtacante.exaustao) return;
-
-    if (cartaAtacante.Mecânica && cartaAtacante.Mecânica.includes('Instável')) {
-        const matchInstavel = cartaAtacante.Mecânica.match(/\((\d+)\)/);
-        if (matchInstavel) {
-            const valorInstavel = parseInt(matchInstavel[1], 10) * 10;
-            cartaAtacante.Vida -= valorInstavel;
-            cartaAlvo.Vida -= valorInstavel;
-        }
-    }
-
-    if (cartaAtacante.Vida > 0 && cartaAlvo.Vida > 0) {
-        cartaAlvo.Vida -= cartaAtacante.Força;
-        cartaAtacante.Vida -= cartaAlvo.Força;
-    }
-
-    cartaAtacante.exaustao = true;
-    moverMortosParaCemiterio(estado, userId);
-    moverMortosParaCemiterio(estado, oponenteId);
 }
 
 function registrarMapeamentoSocketUsuario(socket, userId) {
@@ -187,24 +158,16 @@ function gerenciarSockets(io, db) {
 
             registrarMapeamentoSocketUsuario(socket, userId);
 
-            if (filaDeEspera && filaDeEspera.userId === userId) {
-                console.log(`[FILA] Jogador ${userId} já está na fila. Ignorando nova requisição.`);
-                return;
-            }
-            
-            console.log(`[FILA] Jogador ${userId} (socket ${socket.id}) protocolou busca com o baralho ${deckId}`);
-
-            if (!filaDeEspera) {
+            if (filaDeEspera === null) {
                 filaDeEspera = { socket, deckId, userId };
-                socket.emit('status_matchmaking', 'Você está na fila, aguardando outro jogador...');
-                console.log(`[FILA] ${userId} (${socket.id}) é o primeiro na fila. Fila agora tem 1 jogador.`);
+                console.log(`[FILA] ${userId} entrou na fila com deck ${deckId}.`);
+                socket.emit('status_matchmaking', { status: 'na_fila', mensagem: 'Buscando oponente...' });
             } else {
-                console.log(`[MATCH] Fila tem um jogador. Formando partida...`);
                 const { socket: j1Socket, deckId: d1, userId: u1 } = filaDeEspera;
                 const { socket: j2Socket, deckId: d2, userId: u2 } = { socket, deckId, userId };
-                
+
                 filaDeEspera = null;
-                console.log(`[MATCH] Fila esvaziada.`);
+                console.log('[MATCH] Fila esvaziada.');
 
                 const nomeDaSala = `sala_${j1Socket.id}_${j2Socket.id}`;
                 j1Socket.join(nomeDaSala);
@@ -248,71 +211,48 @@ function gerenciarSockets(io, db) {
                 const userId = jogo.socketIdParaUid[socket.id];
                 if (!userId || userId !== jogo.estado.turno) return;
 
-                const acaoValida = logicaAcao(jogo.estado, userId, payload);
-                if (acaoValida === false) return;
+                const resultado = logicaAcao(jogo.estado, userId, payload);
+                if (!resultado || resultado.ok === false) return;
 
-                const oponenteId = Object.keys(jogo.estado.jogadores).find(id => id !== userId);
-                if (jogo.estado.jogadores[oponenteId].vida <= 0) {
-                    encerrarPartida(io, sala, { vencedor: userId, motivo: 'vitoria_padrao' });
-                } else {
-                    io.to(sala).emit('estado_atualizado', jogo.estado);
+                jogo.estado = resultado.estado;
+
+                if (resultado.fimDeJogo) {
+                    encerrarPartida(io, sala, {
+                        vencedor: resultado.vencedor,
+                        motivo: 'vitoria_padrao'
+                    });
+                    return;
                 }
+
+                io.to(sala).emit('estado_atualizado', jogo.estado);
             });
         };
 
-        criarManipuladorDeAcao('passar_turno', (estado, userId) => {
-            const proximoJogadorId = Object.keys(estado.jogadores).find(id => id !== userId);
-            const jogadorDoTurno = estado.jogadores[proximoJogadorId];
-            if (jogadorDoTurno.baralho.length > 0) jogadorDoTurno.mao.push(jogadorDoTurno.baralho.shift());
-            const { geracaoRecursos: geracao, recursosMax: maximo } = jogadorDoTurno;
-            jogadorDoTurno.recursos.C = Math.min(jogadorDoTurno.recursos.C + geracao.C, maximo.C);
-            jogadorDoTurno.recursos.M = Math.min(jogadorDoTurno.recursos.M + geracao.M, maximo.M);
-            jogadorDoTurno.recursos.O = Math.min(jogadorDoTurno.recursos.O + geracao.O, maximo.O);
-            jogadorDoTurno.recursos.A = Math.min(jogadorDoTurno.recursos.A + geracao.A, maximo.A);
-            estado.campo[proximoJogadorId].forEach(c => c.exaustao = false);
-            estado.turno = proximoJogadorId;
-        });
+        criarManipuladorDeAcao('passar_turno', (estado, userId) => passarTurno(estado, userId));
 
         criarManipuladorDeAcao('jogar_carta', (estado, userId, { cartaId }) => {
-            const jogador = estado.jogadores[userId];
-            const idx = jogador.mao.findIndex(c => c.id === cartaId);
-            if (idx === -1) return;
-            const carta = jogador.mao[idx];
-            if (jogador.recursos.C < carta.C || jogador.recursos.M < carta.M || jogador.recursos.O < carta.O || jogador.recursos.A < carta.A) return;
-            jogador.recursos.C -= carta.C;
-            jogador.recursos.M -= carta.M;
-            jogador.recursos.O -= carta.O;
-            jogador.recursos.A -= carta.A;
-            jogador.mao.splice(idx, 1);
-            carta.exaustao = true;
-            estado.campo[userId].push(carta);
+            if (!validarStringObrigatoria(socket, 'jogar_carta', cartaId, 'cartaId')) {
+                return { ok: false };
+            }
+
+            return jogarCarta(estado, userId, cartaId);
         });
 
         criarManipuladorDeAcao('atacar_fortaleza', (estado, userId, { atacantesIds }) => {
             if (!Array.isArray(atacantesIds)) {
                 emitirErroPayloadInvalido(socket, 'atacar_fortaleza', 'O campo "atacantesIds" deve ser um array.');
-                return false;
+                return { ok: false };
             }
 
-            const oponenteId = Object.keys(estado.jogadores).find(id => id !== userId);
-            const oponente = estado.jogadores[oponenteId];
-            let danoTotal = 0;
-            atacantesIds.forEach(atacanteId => {
-                const cartaAtacante = estado.campo[userId].find(c => c.id === atacanteId);
-                if (cartaAtacante && cartaAtacante.Força > 0 && !cartaAtacante.exaustao) {
-                    danoTotal += cartaAtacante.Força;
-                    cartaAtacante.exaustao = true;
-                }
-            });
-            if (danoTotal > 0) { oponente.vida -= danoTotal; }
+            return atacarFortaleza(estado, userId, atacantesIds);
         });
 
         criarManipuladorDeAcao('declarar_ataque', (estado, userId, { atacanteId, alvoId }) => {
             const atacanteValido = validarStringObrigatoria(socket, 'declarar_ataque', atacanteId, 'atacanteId');
             const alvoValido = validarStringObrigatoria(socket, 'declarar_ataque', alvoId, 'alvoId');
-            if (!atacanteValido || !alvoValido) return false;
+            if (!atacanteValido || !alvoValido) return { ok: false };
 
-            resolverCombateDeclarado(estado, userId, atacanteId, alvoId);
+            return declararAtaque(estado, userId, atacanteId, alvoId);
         });
 
         socket.on('rebind_socket', (dados = {}) => {
@@ -390,7 +330,5 @@ module.exports.__testables = {
     encerrarPartida,
     pausarPartidaPorDesconexao,
     registrarMapeamentoSocketUsuario,
-    limparMapeamentoDoSocket,
-    resolverCombateDeclarado,
-    moverMortosParaCemiterio
+    limparMapeamentoDoSocket
 };
