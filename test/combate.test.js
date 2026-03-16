@@ -91,3 +91,16 @@ test('combate: Instável pode matar antes da troca de dano', () => {
     assert.equal(estado.campo.j2[0].Vida, 70);
     assert.equal(estado.jogadores.j2.cemiterio.length, 0);
 });
+
+
+test('combate: Instável sem valor numérico não quebra o combate', () => {
+    const estado = criarEstado({
+        atacante: { id: 'a1', Vida: 100, Força: 20, Mecânica: 'Instável', exaustao: false },
+        alvo: { id: 'b1', Vida: 80, Força: 10, exaustao: false }
+    });
+
+    __testables.resolverCombateDeclarado(estado, 'j1', 'a1', 'b1');
+
+    assert.equal(estado.campo.j1[0].Vida, 90);
+    assert.equal(estado.campo.j2[0].Vida, 60);
+});
