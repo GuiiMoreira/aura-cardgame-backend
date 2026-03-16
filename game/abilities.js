@@ -10,6 +10,13 @@ const abilityRegistry = {
       targetCard.Vida -= dano;
     },
   },
+  RECARREGAVEL: {
+    onTurnStart: ({ sourceCard }) => {
+      if (!sourceCard) return;
+      if (typeof sourceCard.turnosRecarga !== 'number' || sourceCard.turnosRecarga <= 0) return;
+      sourceCard.turnosRecarga -= 1;
+    },
+  },
   IMPACTO: {
     onSummon: ({ estado, opponentId, ability }) => {
       const dano = ability.params.valor;
@@ -36,7 +43,17 @@ const abilityRegistry = {
   },
 };
 
-function normalizeAbility(rawAbility, index) {
+const ALIAS_BY_LABEL = {
+  INSTAVEL: 'INSTAVEL',
+  IMPACTO: 'IMPACTO',
+  REGENERACAO: 'REGENERACAO',
+  'ÚLTIMO SUSPIRO': 'ULTIMO_SUSPIRO',
+  'ULTIMO SUSPIRO': 'ULTIMO_SUSPIRO',
+  RECARREGAVEL: 'RECARREGAVEL',
+  'RECARREGÁVEL': 'RECARREGAVEL',
+};
+
+function normalizeAbility(rawAbility, index = 0) {
   if (!rawAbility || typeof rawAbility !== 'object') {
     return null;
   }
@@ -61,14 +78,58 @@ function normalizeAbility(rawAbility, index) {
   };
 }
 
-function getAbilitiesFromCard(card = {}) {
-  if (!Array.isArray(card.habilidades)) {
+function parseTextualMechanics(text) {
+  if (typeof text !== 'string' || text.trim() === '') {
     return [];
   }
 
-  return card.habilidades
-    .map((ability, index) => normalizeAbility(ability, index))
+  const blocos = text
+    .split(/[;,|]+/)
+    .map((bloco) => bloco.trim())
     .filter(Boolean);
+
+  return blocos
+    .map((bloco, sourceIndex) => {
+      const match = bloco.match(/^([\p{L}\s_]+?)(?:\s*\(([-+]?\d+)\))?$/u);
+      if (!match) {
+        return null;
+      }
+
+      const rawLabel = match[1].trim().replace(/\s+/g, ' ').toUpperCase();
+      const tipo = ALIAS_BY_LABEL[rawLabel];
+      if (!tipo) {
+        return null;
+      }
+
+      const valor = match[2] ? Number(match[2]) : 0;
+
+      return normalizeAbility(
+        {
+          tipo,
+          params: { valor: Number.isFinite(valor) ? valor : 0 },
+          prioridade: 0,
+        },
+        sourceIndex
+      );
+    })
+    .filter(Boolean);
+}
+
+function getAbilitiesFromCard(card = {}) {
+  if (Array.isArray(card.habilidades) && card.habilidades.length > 0) {
+    return card.habilidades.map((ability, index) => normalizeAbility(ability, index)).filter(Boolean);
+  }
+
+  return parseTextualMechanics(card['Mecânica'] ?? card.Mecanica);
+}
+
+function normalizeCardAbilities(card = {}) {
+  const habilidades = getAbilitiesFromCard(card);
+
+  return {
+    ...card,
+    habilidades,
+  };
 }
 
 function sortAbilities(abilities) {
@@ -105,6 +166,9 @@ function runHookForCard(card, hook, context) {
 module.exports = {
   HOOKS,
   abilityRegistry,
+  normalizeAbility,
+  parseTextualMechanics,
   getAbilitiesFromCard,
+  normalizeCardAbilities,
   runHookForCard,
 };
