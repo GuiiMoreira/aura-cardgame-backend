@@ -3,6 +3,35 @@ const { criarEstadoInicialDoJogo } = require('../game/logic');
 const jogosAtivos = {};
 let filaDeEspera = null;
 
+function emitirErroPayloadInvalido(socket, nomeAcao, detalhe) {
+    socket.emit('erro_partida', {
+        mensagem: `Payload inválido para ${nomeAcao}. ${detalhe}`
+    });
+}
+
+function validarPayloadBasico(socket, nomeAcao, dados) {
+    if (!dados || typeof dados !== 'object' || Array.isArray(dados)) {
+        emitirErroPayloadInvalido(socket, nomeAcao, 'Envie um objeto válido.');
+        return null;
+    }
+
+    if (typeof dados.sala !== 'string' || !dados.sala.trim()) {
+        emitirErroPayloadInvalido(socket, nomeAcao, 'O campo "sala" deve ser uma string não vazia.');
+        return null;
+    }
+
+    return dados;
+}
+
+function validarStringObrigatoria(socket, nomeAcao, valor, campo) {
+    if (typeof valor !== 'string' || !valor.trim()) {
+        emitirErroPayloadInvalido(socket, nomeAcao, `O campo "${campo}" deve ser uma string não vazia.`);
+        return false;
+    }
+
+    return true;
+}
+
 function moverMortosParaCemiterio(estado, jogadorId) {
     estado.campo[jogadorId] = estado.campo[jogadorId].filter(carta => {
         if (carta.Vida <= 0) {
@@ -20,9 +49,12 @@ function resolverCombateDeclarado(estado, userId, atacanteId, alvoId) {
     if (!cartaAtacante || !cartaAlvo || cartaAtacante.exaustao) return;
 
     if (cartaAtacante.Mecânica && cartaAtacante.Mecânica.includes('Instável')) {
-        const valorInstavel = parseInt(cartaAtacante.Mecânica.match(/\((\d+)\)/)[1]) * 10;
-        cartaAtacante.Vida -= valorInstavel;
-        cartaAlvo.Vida -= valorInstavel;
+        const matchInstavel = cartaAtacante.Mecânica.match(/\((\d+)\)/);
+        if (matchInstavel) {
+            const valorInstavel = parseInt(matchInstavel[1], 10) * 10;
+            cartaAtacante.Vida -= valorInstavel;
+            cartaAlvo.Vida -= valorInstavel;
+        }
     }
 
     if (cartaAtacante.Vida > 0 && cartaAlvo.Vida > 0) {
@@ -85,12 +117,18 @@ function gerenciarSockets(io, db) {
 
         const criarManipuladorDeAcao = (nomeAcao, logicaAcao) => {
              socket.on(nomeAcao, (dados) => {
-                const sala = dados.sala;
+                const payload = validarPayloadBasico(socket, nomeAcao, dados);
+                if (!payload) return;
+
+                const sala = payload.sala;
                 const jogo = jogosAtivos[sala];
                 if (!jogo) return;
                 const userId = jogo.socketIdParaUid[socket.id];
                 if (!userId || userId !== jogo.estado.turno) return;
-                logicaAcao(jogo.estado, userId, dados);
+
+                const acaoValida = logicaAcao(jogo.estado, userId, payload);
+                if (acaoValida === false) return;
+
                 const oponenteId = Object.keys(jogo.estado.jogadores).find(id => id !== userId);
                 if (jogo.estado.jogadores[oponenteId].vida <= 0) {
                     io.to(sala).emit('fim_de_jogo', { vencedor: userId });
@@ -128,6 +166,11 @@ function gerenciarSockets(io, db) {
             estado.campo[userId].push(carta);
         });
         criarManipuladorDeAcao('atacar_fortaleza', (estado, userId, { atacantesIds }) => {
+            if (!Array.isArray(atacantesIds)) {
+                emitirErroPayloadInvalido(socket, 'atacar_fortaleza', 'O campo "atacantesIds" deve ser um array.');
+                return false;
+            }
+
             const oponenteId = Object.keys(estado.jogadores).find(id => id !== userId);
             const oponente = estado.jogadores[oponenteId];
             let danoTotal = 0;
@@ -141,6 +184,10 @@ function gerenciarSockets(io, db) {
             if (danoTotal > 0) { oponente.vida -= danoTotal; }
         });
         criarManipuladorDeAcao('declarar_ataque', (estado, userId, { atacanteId, alvoId }) => {
+            const atacanteValido = validarStringObrigatoria(socket, 'declarar_ataque', atacanteId, 'atacanteId');
+            const alvoValido = validarStringObrigatoria(socket, 'declarar_ataque', alvoId, 'alvoId');
+            if (!atacanteValido || !alvoValido) return false;
+
             resolverCombateDeclarado(estado, userId, atacanteId, alvoId);
         });
 
