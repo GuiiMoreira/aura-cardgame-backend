@@ -118,7 +118,7 @@ O backend exige autenticação em toda conexão Socket.IO:
 - No `io.use`, o servidor lê `socket.handshake.auth.token`.
 - O token é validado via `admin.auth().verifyIdToken(token)`.
 - Em caso de sucesso, o socket recebe `socket.user = { uid, ...claims }`.
-- Em caso de falha/ausência de token, o servidor emite `erro_partida` com `motivo` claro e desconecta o cliente.
+- Em caso de falha/ausência de token, o middleware interrompe a conexão no handshake com `next(new Error(...))` e o cliente recebe `connect_error`.
 
 Exemplo de conexão no cliente:
 
