@@ -396,7 +396,7 @@ test('integração socket: timeout de reconexão encerra partida por desconexão
 
     const fim = await waitForEvent(p2, 'fim_de_jogo');
     assert.equal(fim.sala, partida.sala);
-    assert.equal(fim.motivo, 'desconexao');
+    assert.equal(fim.motivo, 'abandono/desconexao');
     assert.equal(fim.vencedor, 'p2');
     assert.equal(fim.jogadorDesconectado, 'p1');
 
