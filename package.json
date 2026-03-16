@@ -10,8 +10,10 @@
     "lint": "npx --yes eslint@9 .",
     "format": "npx --yes prettier@3 . --write",
     "format:check": "npx --yes prettier@3 . --check",
-    "test:coverage": "NODE_V8_COVERAGE=coverage node --experimental-test-coverage --test --test-concurrency=1 tests/*.test.js",
-    "check": "npm run lint && npm run format:check && npm test"
+    "test:coverage": "node --experimental-test-coverage --test-coverage-lines=45 --test-coverage-functions=45 --test-coverage-branches=35 --test --test-concurrency=1 tests/*.test.js",
+    "check": "npm run lint && npm run format:check && npm test && npm run coverage:check",
+    "lint:fix": "npx --yes eslint@9 . --fix",
+    "coverage:check": "npm run test:coverage"
   },
   "keywords": [],
   "author": "",

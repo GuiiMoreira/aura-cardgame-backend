@@ -293,16 +293,19 @@ Scripts disponíveis:
 npm run lint
 npm run format:check
 npm run format
+npm run coverage:check
 npm run check
 ```
 
-- `npm run check` executa lint + format check + testes.
-- O workflow de CI também roda essas verificações em PRs para `main`.
-- Cobertura pode ser habilitada no GitHub Actions com a variável de repositório `ENABLE_COVERAGE=true`.
+- `npm run coverage:check` executa os testes com cobertura e valida o piso mínimo atual.
+- `npm run check` executa lint + format check + testes + cobertura mínima.
+- O workflow de CI roda `npm ci`, `npm run lint`, `npm test` e `npm run coverage:check` em PRs.
 
 ## 🤝 Contribuição e release
 
 As convenções de branch/commit e o checklist de release estão em [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+O fluxo de release/versionamento e política de changelog estão em [`docs/release-versioning.md`](./docs/release-versioning.md) e no [`CHANGELOG.md`](./CHANGELOG.md).
 
 As instruções para configurar bloqueio de merge sem CI verde estão em [`.github/branch-protection.md`](./.github/branch-protection.md).
 

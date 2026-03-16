@@ -54,8 +54,16 @@ Antes de criar release/tag:
 
 - [ ] `npm ci`
 - [ ] `npm run check`
-- [ ] Revisar changelog/resumo de mudanças.
+- [ ] Cobertura mínima atendida (`npm run coverage:check`).
+- [ ] Revisar/atualizar changelog (formato Keep a Changelog).
 - [ ] Validar variáveis de ambiente em produção (`GOOGLE_CREDENTIALS_BASE64`, `PORT`, CORS).
 - [ ] Confirmar compatibilidade de eventos Socket.IO com o frontend.
 - [ ] Confirmar política de rollback (tag anterior disponível).
 - [ ] Criar tag semântica (`vX.Y.Z`) e publicar release notes.
+
+
+## Versionamento e changelog
+
+- Seguimos **SemVer** (`MAJOR.MINOR.PATCH`).
+- O processo de release está detalhado em [`docs/release-versioning.md`](./docs/release-versioning.md).
+- Toda release deve atualizar [`CHANGELOG.md`](./CHANGELOG.md).

@@ -29,20 +29,8 @@ jobs:
       - name: Run lint
         run: npm run lint
 
-      - name: Run format check
-        run: npm run format:check
-
       - name: Run tests
         run: npm test
 
-      - name: Run coverage (optional)
-        if: ${{ vars.ENABLE_COVERAGE == 'true' }}
-        run: npm run test:coverage
-
-      - name: Upload coverage artifact
-        if: ${{ vars.ENABLE_COVERAGE == 'true' && hashFiles('coverage/**') != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage/
-          if-no-files-found: ignore
+      - name: Check coverage threshold
+        run: npm run coverage:check
