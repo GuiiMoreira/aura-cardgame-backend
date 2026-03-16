@@ -1,81 +1,73 @@
 require('dotenv').config();
 
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const http = require('http');
-const path = require('path');
-const { Server } = require("socket.io");
+const { Server } = require('socket.io');
 const cors = require('cors');
 const admin = require('firebase-admin');
 
 const gerenciarSockets = require('./sockets/manager');
 
-// --- LEITURA DAS CREDENCIAIS ---
-const validateServiceAccount = (credentials) => {
-    const requiredFields = ['project_id', 'client_email', 'private_key'];
-    const missingFields = requiredFields.filter((field) => !credentials?.[field]);
-
-    if (missingFields.length > 0) {
-        throw new Error(`Credenciais inválidas: campos obrigatórios ausentes (${missingFields.join(', ')}).`);
+function carregarCredenciaisFirebase() {
+    if (process.env.GOOGLE_CREDENTIALS_BASE64) {
+        try {
+            console.log('✅ Variável GOOGLE_CREDENTIALS_BASE64 encontrada. Decodificando...');
+            const credentialsJson = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf8');
+            return JSON.parse(credentialsJson);
+        } catch (error) {
+            throw new Error(`GOOGLE_CREDENTIALS_BASE64 inválida: ${error.message}`);
+        }
     }
 
-    return credentials;
-};
+    const credenciaisLocais = path.resolve(__dirname, 'serviceAccountKey.json');
+    if (fs.existsSync(credenciaisLocais)) {
+        console.log('⚠️ GOOGLE_CREDENTIALS_BASE64 não encontrada. Carregando credenciais locais...');
+        return require(credenciaisLocais);
+    }
+
+    throw new Error('Credenciais do Firebase não encontradas. Configure GOOGLE_CREDENTIALS_BASE64 ou crie serviceAccountKey.json na raiz do projeto.');
+}
+
+function validarCredenciais(serviceAccount) {
+    const camposObrigatorios = ['project_id', 'client_email', 'private_key'];
+    const faltantes = camposObrigatorios.filter((campo) => !serviceAccount?.[campo]);
+    if (faltantes.length > 0) {
+        throw new Error(`Credenciais do Firebase incompletas. Campos obrigatórios ausentes: ${faltantes.join(', ')}`);
+    }
+}
 
 let serviceAccount;
-
 try {
-    if (process.env.GOOGLE_CREDENTIALS_BASE64) {
-        console.log("✅ Variável GOOGLE_CREDENTIALS_BASE64 encontrada. Decodificando...");
-
-        let credentialsJson;
-        try {
-            credentialsJson = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf8');
-            serviceAccount = JSON.parse(credentialsJson);
-        } catch (error) {
-            throw new Error(`GOOGLE_CREDENTIALS_BASE64 está inválida (base64/JSON): ${error.message}`);
-        }
-    } else {
-        const localCredentialsPath = path.resolve(__dirname, 'serviceAccountKey.json');
-        console.log(`⚠️ GOOGLE_CREDENTIALS_BASE64 não encontrada. Carregando credenciais locais em ${localCredentialsPath}...`);
-
-        try {
-            serviceAccount = require(localCredentialsPath);
-        } catch (error) {
-            throw new Error(`Arquivo local de credenciais não encontrado ou inválido em '${localCredentialsPath}'.`);
-        }
-    }
-
-    serviceAccount = validateServiceAccount(serviceAccount);
+    serviceAccount = carregarCredenciaisFirebase();
+    validarCredenciais(serviceAccount);
 } catch (error) {
-    console.error(`❌ Falha ao carregar credenciais do Firebase: ${error.message}`);
-    console.error('Configure GOOGLE_CREDENTIALS_BASE64 com o JSON da conta de serviço em base64 ou crie ./serviceAccountKey.json válido.');
+    console.error(`❌ Falha na inicialização das credenciais Firebase: ${error.message}`);
     process.exit(1);
 }
 
-// --- INICIALIZAÇÃO DO FIREBASE ---
 admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount)
+    credential: admin.credential.cert(serviceAccount),
 });
 
 const db = admin.firestore();
 
-// --- CONFIGURAÇÃO DO SERVIDOR ---
 const app = express();
 app.use(cors());
 
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173", // ajuste conforme seu frontend
-        methods: ["GET", "POST"]
-    }
+        origin: 'http://localhost:5173',
+        methods: ['GET', 'POST'],
+    },
 });
+
 const PORT = process.env.PORT || 3000;
 
-// --- INICIALIZAÇÃO DO JOGO ---
 gerenciarSockets(io, db);
 
-// --- INICIA O SERVIDOR ---
 server.listen(PORT, () => {
     console.log(`🚀 Servidor de jogo rodando na porta ${PORT}`);
 });
