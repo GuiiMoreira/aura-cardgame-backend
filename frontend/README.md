@@ -35,5 +35,8 @@ npm run dev
 Para backend online, desative o checkbox "Ativar mock server" na tela de Login e use:
 
 ```bash
-VITE_SOCKET_URL=http://localhost:3000 npm run dev
+VITE_API_URL=http://localhost:3000 npm run dev
 ```
+
+
+Também é possível criar `frontend/.env.local` com `VITE_API_URL=http://localhost:3000`.
