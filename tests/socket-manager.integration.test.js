@@ -344,7 +344,6 @@ test('integração socket: desconexão e reconexão preservam partida ativa', as
   }
 });
 
-
 test('integração socket: reconexão sem sala usa vínculo uid -> sala ativa', async () => {
   const { p1, p2, encerrar, criarCliente } = await criarAmbiente();
 
@@ -405,7 +404,6 @@ test('integração socket: timeout de reconexão encerra partida por abandono', 
     await encerrar();
   }
 });
-
 
 test('integração socket: snapshot simplificado é salvo nas partidas ativas', async () => {
   const { db, p1, p2, encerrar } = await criarAmbiente();
