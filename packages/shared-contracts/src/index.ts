@@ -1,5 +1,13 @@
 export type Primitive = string | number | boolean | null;
 
+export const SOCKET_PROTOCOL_VERSION = '1.1.0' as const;
+export const LEGACY_PROTOCOL_VERSION = 'legacy-v1' as const;
+
+export type SocketHandshakeAuth = {
+  token: string;
+  protocolVersion?: string;
+};
+
 export type AuraCard = {
   id: string;
   nome?: string;
@@ -40,27 +48,36 @@ export type ContextoSocket = {
   userId?: string;
 };
 
-export type StatusMatchmakingPayload = ContextoSocket & {
-  mensagem: string;
+export type ProtocolEnvelope = {
+  protocolVersion: string;
 };
 
-export type PartidaEncontradaPayload = ContextoSocket & {
-  sala: string;
-  estado: EstadoPartida;
-};
+export type StatusMatchmakingPayload = ProtocolEnvelope &
+  ContextoSocket & {
+    mensagem: string;
+  };
 
-export type EstadoAtualizadoPayload = ContextoSocket & {
-  sala: string;
-  estado: EstadoPartida;
-};
+export type PartidaEncontradaPayload = ProtocolEnvelope &
+  ContextoSocket & {
+    sala: string;
+    estado: EstadoPartida;
+  };
 
-export type FimDeJogoPayload = ContextoSocket & {
-  vencedor: string;
-};
+export type EstadoAtualizadoPayload = ProtocolEnvelope &
+  ContextoSocket & {
+    sala: string;
+    estado: EstadoPartida;
+  };
 
-export type ErroPartidaPayload = ContextoSocket & {
-  motivo: string;
-};
+export type FimDeJogoPayload = ProtocolEnvelope &
+  ContextoSocket & {
+    vencedor: string;
+  };
+
+export type ErroPartidaPayload = ProtocolEnvelope &
+  ContextoSocket & {
+    motivo: string;
+  };
 
 export type SocketServerToClientEvents = {
   status_matchmaking: (payload: StatusMatchmakingPayload) => void;

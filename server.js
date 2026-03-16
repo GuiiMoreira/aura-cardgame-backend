@@ -11,6 +11,9 @@ const admin = require('firebase-admin');
 const gerenciarSockets = require('./sockets/manager');
 const { logger, createRequestId, SENSITIVE_KEYS } = require('./logger');
 
+const CURRENT_PROTOCOL_VERSION = '1.1.0';
+const LEGACY_PROTOCOL_VERSION = 'legacy-v1';
+
 function carregarCredenciaisFirebase() {
   if (process.env.GOOGLE_CREDENTIALS_BASE64) {
     try {
@@ -138,6 +141,12 @@ async function bootstrap() {
   io.use(async (socket, next) => {
     const requestId = socket.handshake?.headers?.['x-request-id'] || createRequestId();
     socket.requestId = requestId;
+    const handshakeProtocolVersion = socket.handshake?.auth?.protocolVersion;
+    const protocolVersion =
+      typeof handshakeProtocolVersion === 'string' && handshakeProtocolVersion.trim().length > 0
+        ? handshakeProtocolVersion.trim()
+        : LEGACY_PROTOCOL_VERSION;
+    socket.protocolVersion = protocolVersion;
 
     const token = socket.handshake?.auth?.token;
     if (!token || typeof token !== 'string') {
@@ -154,7 +163,19 @@ async function bootstrap() {
         requestId,
         socketId: socket.id,
         userId: socket.user.uid,
+        protocolVersion,
       });
+
+      if (protocolVersion === LEGACY_PROTOCOL_VERSION) {
+        logger.warn('Cliente conectado sem protocolVersion no handshake. Usando modo legado.', {
+          requestId,
+          socketId: socket.id,
+          userId: socket.user.uid,
+          protocolVersion,
+          serverProtocolVersion: CURRENT_PROTOCOL_VERSION,
+        });
+      }
+
       return next();
     } catch (error) {
       logger.warn('Falha ao validar token no handshake do socket.', {

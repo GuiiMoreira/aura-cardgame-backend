@@ -2,6 +2,12 @@ const { criarEstadoInicialDoJogo } = require('../game/logic');
 const { passarTurno, jogarCarta, atacarFortaleza, declararAtaque } = require('../game/actions');
 const { createRequestId, logger: baseLogger } = require('../logger');
 
+const CURRENT_PROTOCOL_VERSION = '1.1.0';
+
+function withProtocol(payload = {}) {
+  return { protocolVersion: CURRENT_PROTOCOL_VERSION, ...payload };
+}
+
 const jogosAtivos = {};
 const salaAtivaPorUid = {};
 let filaDeEspera = null;
@@ -88,7 +94,7 @@ function getMetrics() {
 }
 
 function emitirErroPartida(socket, motivo, context = {}, logger = baseLogger) {
-  socket.emit('erro_partida', { motivo, ...context });
+  socket.emit('erro_partida', withProtocol({ motivo, ...context }));
   logger.warn('Evento erro_partida emitido.', context);
 }
 
@@ -166,7 +172,7 @@ async function encerrarPartida(io, db, sala, payload, logger = baseLogger) {
     logger.error('Falha ao mover partida para histórico.', { sala, matchId: sala, error });
   }
 
-  io.to(sala).emit('fim_de_jogo', { ...payload, sala, matchId: sala });
+  io.to(sala).emit('fim_de_jogo', withProtocol({ ...payload, sala, matchId: sala }));
   delete jogosAtivos[sala];
   updateActiveMatchesMetric();
   logger.info('Partida encerrada.', { sala, matchId: sala, payload });
@@ -359,13 +365,13 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         if (!filaDeEspera) {
           filaDeEspera = { socket, deckId, userId };
           updateQueueMetric();
-          socket.emit('status_matchmaking', {
+          socket.emit('status_matchmaking', withProtocol({
             mensagem: 'Você está na fila, aguardando outro jogador...',
             requestId,
             userId,
             sala: null,
             matchId: null,
-          });
+          }));
           logger.info('Jogador inserido na fila de matchmaking.', {
             ...contexto,
             matchmakingPendente: metrics.matchmakingPendente,
@@ -407,12 +413,12 @@ function gerenciarSockets(io, db, logger = baseLogger) {
             status: 'ativa',
             recuperavel: true,
           });
-          io.to(nomeDaSala).emit('partida_encontrada', {
+          io.to(nomeDaSala).emit('partida_encontrada', withProtocol({
             sala: nomeDaSala,
             matchId: nomeDaSala,
             requestId,
             estado: estadoInicial,
-          });
+          }));
           logger.info('Partida criada com sucesso.', {
             ...contextoMatch,
             partidasAtivas: metrics.partidasAtivas,
@@ -430,13 +436,13 @@ function gerenciarSockets(io, db, logger = baseLogger) {
             ],
             error,
           });
-          io.to(nomeDaSala).emit('erro_partida', {
+          io.to(nomeDaSala).emit('erro_partida', withProtocol({
             motivo,
             requestId,
             sala: nomeDaSala,
             matchId: nomeDaSala,
             userId,
-          });
+          }));
         }
       } finally {
         registrarLatenciaEvento('buscar_partida', startedAt);
@@ -482,12 +488,12 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           if (jogo.estado.jogadores[oponenteId].vida <= 0) {
             await encerrarPartida(io, db, sala, { vencedor: userId, requestId }, logger);
           } else {
-            io.to(sala).emit('estado_atualizado', {
+            io.to(sala).emit('estado_atualizado', withProtocol({
               sala,
               matchId: sala,
               requestId,
               estado: jogo.estado,
-            });
+            }));
           }
 
           logger.info('Evento de ação processado.', {
@@ -559,12 +565,12 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         socket.join(salaAlvo);
 
         await persistirPartidaAtiva(db, salaAlvo, jogo, { status: 'ativa', recuperavel: true });
-        io.to(salaAlvo).emit('estado_atualizado', {
+        io.to(salaAlvo).emit('estado_atualizado', withProtocol({
           sala: salaAlvo,
           matchId: salaAlvo,
           requestId,
           estado: jogo.estado,
-        });
+        }));
         logger.info('Jogador reconectado na partida.', {
           requestId,
           userId,
