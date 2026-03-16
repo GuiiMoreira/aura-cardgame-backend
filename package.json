@@ -6,7 +6,12 @@
   "scripts": {
     "test": "node --test --test-concurrency=1 tests/*.test.js",
     "dev": "nodemon server.js",
-    "test:watch": "node --test --watch"
+    "test:watch": "node --test --watch",
+    "lint": "npx --yes eslint@9 .",
+    "format": "npx --yes prettier@3 . --write",
+    "format:check": "npx --yes prettier@3 . --check",
+    "test:coverage": "NODE_V8_COVERAGE=coverage node --experimental-test-coverage --test --test-concurrency=1 tests/*.test.js",
+    "check": "npm run lint && npm run format:check && npm test"
   },
   "keywords": [],
   "author": "",

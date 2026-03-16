@@ -42,7 +42,9 @@ Backend em Node.js para um jogo de cartas online em tempo real, usando Socket.IO
 ## 🧩 Firestore (Firebase) - Modelo de Dados
 
 ### Coleção `cartas_mestras`
+
 Documentos de cartas usadas pelos baralhos. Cada documento deve ter pelo menos:
+
 - `id` (string) - identificador (usado em `mockDeck` e em baralhos)
 - `Nome`, `Força`, `Vida`, `C`, `M`, `O`, `A` (atributos de custo/força/vida)
 - `Mecânica`, `DescricaoMecanica` (opcional)
@@ -51,11 +53,15 @@ Documentos de cartas usadas pelos baralhos. Cada documento deve ter pelo menos:
 > O importador usa `item.id` como ID do documento em `cartas_mestras` (upsert com merge), mantendo consistência com os IDs referenciados nos baralhos.
 
 ### Coleção `usuarios/{userId}/baralhos/{deckId}`
+
 Cada documento representa um baralho personalizado de um usuário. Estrutura esperada:
+
 - `cartas`: array de IDs de cartas (string) que existem em `cartas_mestras`.
 
 ### 📏 Regras oficiais de construção de deck
+
 Ao iniciar uma partida, o backend valida o deck antes de montar o estado inicial:
+
 - **Tamanho fixo**: exatamente **30 cartas** (mínimo = 30 e máximo = 30).
 - **Cópias por carta**: no máximo **3 cópias** do mesmo ID.
 - **Integridade de catálogo**: todos os IDs do deck devem existir em `cartas_mestras`.
@@ -128,8 +134,8 @@ const socket = io('http://localhost:3000', {
 socket.emit('buscar_partida', { deckId: 'deck-123' });
 ```
 
-
 ### Emissão do cliente → servidor
+
 - Handshake de conexão: `auth: { token: <Firebase ID Token> }`
 - `buscar_partida` { deckId }
 - `passar_turno` { sala }
@@ -138,6 +144,7 @@ socket.emit('buscar_partida', { deckId: 'deck-123' });
 - `declarar_ataque` { sala, atacanteId, alvoId }
 
 ### Eventos do servidor → cliente
+
 - `status_matchmaking` (status durante fila)
 - `partida_encontrada` { sala, estado }
 - `estado_atualizado` (emitido após cada ação válida)
@@ -191,36 +198,42 @@ Os testes cobrem fluxos críticos: consumo de recursos, exaustão de cartas, dan
 
 Coloque aqui sua licença preferida (MIT, Apache 2.0, etc.).
 
-
 ## 💾 Persistência de Partidas no Firestore
 
 ### Coleção `partidas_ativas` (schema mínimo + metadados)
+
 Cada documento usa `sala` como ID e mantém:
+
 - `sala` (string)
 - `estado` (objeto completo da partida)
 - `jogadores` (objeto com status de conexão por `uid`)
 - `updatedAt` (Date)
 
 Campos adicionais operacionais:
+
 - `status` (`ativa` | `recuperavel`)
 - `recuperavel` (boolean)
 - `expiresAt` (Date para política TTL/limpeza)
 
 ### Fluxo de persistência
+
 - Ao criar matchmaking: salva snapshot inicial em `partidas_ativas`.
 - Após cada ação válida (`passar_turno`, `jogar_carta`, `atacar_fortaleza`, `declarar_ataque`): atualiza snapshot da sala.
 - Em reconexão/desconexão: atualiza status para apoiar recuperação de sessão.
 - No fim da partida: copia para `partidas_historico` e remove de `partidas_ativas`.
 
 ### Recuperação no startup
+
 No boot (`server.js`), o backend carrega partidas de `partidas_ativas` com status não finalizado e as marca como `recuperavel`, permitindo reconexão dos jogadores.
 
 ### TTL / limpeza de partidas abandonadas
+
 - Campo `expiresAt` é renovado a cada snapshot (janela padrão: 24h).
 - Limpeza periódica no backend roda a cada 15 minutos para remover documentos expirados (`status = recuperavel`).
 - Recomenda-se também habilitar **Firestore TTL** em produção usando `expiresAt` para limpeza automática server-side.
 
 ### Custo, performance e limites
+
 - **Writes**: 1 escrita por ação válida da partida (+ escritas de status em reconexão/desconexão).
 - **Reads no startup**: leitura de partidas ativas/recuperáveis para reidratar memória.
 - **Documento grande**: `estado` cresce com tamanho de mão/campo/baralho; o limite do Firestore por documento é **1 MiB**.
@@ -228,3 +241,24 @@ No boot (`server.js`), o backend carrega partidas de `partidas_ativas` com statu
   - manter no snapshot apenas estado necessário para retomar a sessão;
   - evitar histórico de eventos ilimitado dentro do mesmo documento;
   - para auditoria detalhada, gravar eventos em subcoleção (`partidas_historico/{sala}/eventos`) em vez de inchar `partidas_ativas`.
+
+## ✅ Qualidade de código (lint/format)
+
+Scripts disponíveis:
+
+```bash
+npm run lint
+npm run format:check
+npm run format
+npm run check
+```
+
+- `npm run check` executa lint + format check + testes.
+- O workflow de CI também roda essas verificações em PRs para `main`.
+- Cobertura pode ser habilitada no GitHub Actions com a variável de repositório `ENABLE_COVERAGE=true`.
+
+## 🤝 Contribuição e release
+
+As convenções de branch/commit e o checklist de release estão em [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+
+As instruções para configurar bloqueio de merge sem CI verde estão em [`.github/branch-protection.md`](./.github/branch-protection.md).

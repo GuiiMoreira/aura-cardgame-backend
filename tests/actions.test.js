@@ -4,74 +4,80 @@ const assert = require('node:assert/strict');
 const { declararAtaque, atacarFortaleza, jogarCarta } = require('../game/actions');
 
 function criarEstadoBase() {
-    return {
-        jogadores: {
-            p1: {
-                vida: 100,
-                recursos: { C: 20, M: 20, O: 20, A: 20 },
-                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
-                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
-                mao: [],
-                baralho: [],
-                cemiterio: [],
-            },
-            p2: {
-                vida: 100,
-                recursos: { C: 20, M: 20, O: 20, A: 20 },
-                recursosMax: { C: 60, M: 60, O: 60, A: 60 },
-                geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
-                mao: [],
-                baralho: [],
-                cemiterio: [],
-            },
-        },
-        turno: 'p1',
-        campo: { p1: [], p2: [] },
-    };
+  return {
+    jogadores: {
+      p1: {
+        vida: 100,
+        recursos: { C: 20, M: 20, O: 20, A: 20 },
+        recursosMax: { C: 60, M: 60, O: 60, A: 60 },
+        geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
+        mao: [],
+        baralho: [],
+        cemiterio: [],
+      },
+      p2: {
+        vida: 100,
+        recursos: { C: 20, M: 20, O: 20, A: 20 },
+        recursosMax: { C: 60, M: 60, O: 60, A: 60 },
+        geracaoRecursos: { C: 10, M: 10, O: 10, A: 10 },
+        mao: [],
+        baralho: [],
+        cemiterio: [],
+      },
+    },
+    turno: 'p1',
+    campo: { p1: [], p2: [] },
+  };
 }
 
 test('declararAtaque aplica contragolpe da força do alvo (bugfix)', () => {
-    const estado = criarEstadoBase();
-    estado.campo.p1.push({ id: 'a1', Força: 30, Vida: 50, exaustao: false });
-    estado.campo.p2.push({ id: 'd1', Força: 10, Vida: 40, exaustao: false });
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({ id: 'a1', Força: 30, Vida: 50, exaustao: false });
+  estado.campo.p2.push({ id: 'd1', Força: 10, Vida: 40, exaustao: false });
 
-    declararAtaque(estado, 'p1', 'a1', 'd1');
+  declararAtaque(estado, 'p1', 'a1', 'd1');
 
-    assert.equal(estado.campo.p1[0].Vida, 40);
-    assert.equal(estado.campo.p2[0].Vida, 10);
-    assert.equal(estado.campo.p1[0].exaustao, true);
+  assert.equal(estado.campo.p1[0].Vida, 40);
+  assert.equal(estado.campo.p2[0].Vida, 10);
+  assert.equal(estado.campo.p1[0].exaustao, true);
 });
 
 test('declararAtaque com Instável inválido não quebra e segue combate normal', () => {
-    const estado = criarEstadoBase();
-    estado.campo.p1.push({ id: 'a1', Força: 20, Vida: 50, exaustao: false, Mecânica: 'Instável sem valor' });
-    estado.campo.p2.push({ id: 'd1', Força: 20, Vida: 40, exaustao: false });
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({
+    id: 'a1',
+    Força: 20,
+    Vida: 50,
+    exaustao: false,
+    Mecânica: 'Instável sem valor',
+  });
+  estado.campo.p2.push({ id: 'd1', Força: 20, Vida: 40, exaustao: false });
 
-    assert.doesNotThrow(() => declararAtaque(estado, 'p1', 'a1', 'd1'));
-    assert.equal(estado.campo.p1[0].Vida, 30);
-    assert.equal(estado.campo.p2[0].Vida, 20);
+  assert.doesNotThrow(() => declararAtaque(estado, 'p1', 'a1', 'd1'));
+  assert.equal(estado.campo.p1[0].Vida, 30);
+  assert.equal(estado.campo.p2[0].Vida, 20);
 });
 
 test('atacarFortaleza soma dano de atacantes válidos', () => {
-    const estado = criarEstadoBase();
-    estado.campo.p1.push({ id: 'a1', Força: 15, Vida: 20, exaustao: false });
-    estado.campo.p1.push({ id: 'a2', Força: 25, Vida: 20, exaustao: true });
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({ id: 'a1', Força: 15, Vida: 20, exaustao: false });
+  estado.campo.p1.push({ id: 'a2', Força: 25, Vida: 20, exaustao: true });
 
-    atacarFortaleza(estado, 'p1', ['a1', 'a2']);
+  atacarFortaleza(estado, 'p1', ['a1', 'a2']);
 
-    assert.equal(estado.jogadores.p2.vida, 85);
-    assert.equal(estado.campo.p1[0].exaustao, true);
+  assert.equal(estado.jogadores.p2.vida, 85);
+  assert.equal(estado.campo.p1[0].exaustao, true);
 });
 
 test('jogarCarta consome recursos e coloca carta exausta no campo', () => {
-    const estado = criarEstadoBase();
-    estado.jogadores.p1.mao.push({ id: 'c1', C: 5, M: 4, O: 3, A: 2, Força: 10, Vida: 10 });
+  const estado = criarEstadoBase();
+  estado.jogadores.p1.mao.push({ id: 'c1', C: 5, M: 4, O: 3, A: 2, Força: 10, Vida: 10 });
 
-    jogarCarta(estado, 'p1', 'c1');
+  jogarCarta(estado, 'p1', 'c1');
 
-    assert.equal(estado.jogadores.p1.recursos.C, 15);
-    assert.equal(estado.jogadores.p1.recursos.M, 16);
-    assert.equal(estado.jogadores.p1.mao.length, 0);
-    assert.equal(estado.campo.p1.length, 1);
-    assert.equal(estado.campo.p1[0].exaustao, true);
+  assert.equal(estado.jogadores.p1.recursos.C, 15);
+  assert.equal(estado.jogadores.p1.recursos.M, 16);
+  assert.equal(estado.jogadores.p1.mao.length, 0);
+  assert.equal(estado.campo.p1.length, 1);
+  assert.equal(estado.campo.p1[0].exaustao, true);
 });

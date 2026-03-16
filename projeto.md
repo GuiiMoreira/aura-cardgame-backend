@@ -9,9 +9,11 @@ O desenvolvimento de um card game online envolve diversas camadas de tecnologia 
 Para um card game online, a arquitetura geralmente se divide em três grandes componentes:
 
 ### Frontend (Cliente)
+
 É o que o jogador vê e com o que interage no navegador.
 
 Inclui:
+
 - Interface do usuário (menus, coleção de cartas, construtor de baralhos)
 - Tabuleiro de jogo
 - Cartas
@@ -19,6 +21,7 @@ Inclui:
 - Efeitos visuais e sonoros
 
 ### Backend (Servidor)
+
 É o **"cérebro" do jogo**.
 
 Responsabilidades:
