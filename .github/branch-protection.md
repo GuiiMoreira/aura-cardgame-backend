@@ -1,15 +1,19 @@
-# Proteção de branch (main)
+# Proteção de branch (`main`)
 
-Para **bloquear merge sem CI verde**, configure as regras da branch `main` no GitHub:
+Para bloquear merge de PR sem pipeline verde:
 
-1. Vá em **Settings > Branches > Branch protection rules**.
-2. Adicione/edite uma regra para `main`.
+1. Acesse **Settings > Branches > Branch protection rules**.
+2. Crie/edite regra para `main`.
 3. Habilite:
    - **Require a pull request before merging**
    - **Require status checks to pass before merging**
-4. Selecione o check obrigatório do workflow: **CI / ci**.
-5. (Opcional recomendado) habilite:
+4. Marque como obrigatórios os checks deste workflow:
+   - **CI / ci (Run lint)**
+   - **CI / ci (Run tests)**
+   - **CI / ci (Check coverage threshold)**
+5. (Recomendado) habilite também:
    - **Require branches to be up to date before merging**
    - **Require conversation resolution before merging**
+   - **Do not allow bypassing the above settings**
 
-> Resultado: nenhum PR poderá ser mergeado se lint/format/testes falharem.
+> Resultado: nenhum PR pode ser mergeado na `main` se lint, testes ou cobertura mínima falharem.
