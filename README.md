@@ -46,6 +46,7 @@ Documentos de cartas usadas pelos baralhos. Cada documento deve ter pelo menos:
 - `Mecânica`, `DescricaoMecanica` (opcional)
 
 > O script `scripts/import.js` envia os dados de `scripts/cartas.json` para essa coleção.
+> O importador usa `item.id` como ID do documento em `cartas_mestras` (upsert com merge), mantendo consistência com os IDs referenciados nos baralhos.
 
 ### Coleção `usuarios/{userId}/baralhos/{deckId}`
 Cada documento representa um baralho personalizado de um usuário. Estrutura esperada:
@@ -125,7 +126,6 @@ O arquivo `sockets/manager.js` ficou focado em validar payload/socket/contexto e
 
 ```bash
 npm test
-npm run test:watch
 ```
 
 Os testes cobrem fluxos críticos: consumo de recursos, exaustão de cartas, dano e condição de fim de jogo.
