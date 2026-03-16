@@ -42,20 +42,22 @@ test('declararAtaque aplica contragolpe da força do alvo (bugfix)', () => {
   assert.equal(estado.campo.p1[0].exaustao, true);
 });
 
-test('declararAtaque com Instável inválido não quebra e segue combate normal', () => {
+test('declararAtaque com INSTAVEL usa estrutura normalizada de habilidades', () => {
   const estado = criarEstadoBase();
   estado.campo.p1.push({
     id: 'a1',
     Força: 20,
     Vida: 50,
     exaustao: false,
-    Mecânica: 'Instável sem valor',
+    habilidades: [{ tipo: 'INSTAVEL', valor: 2 }],
   });
   estado.campo.p2.push({ id: 'd1', Força: 20, Vida: 40, exaustao: false });
 
-  assert.doesNotThrow(() => declararAtaque(estado, 'p1', 'a1', 'd1'));
-  assert.equal(estado.campo.p1[0].Vida, 30);
-  assert.equal(estado.campo.p2[0].Vida, 20);
+  declararAtaque(estado, 'p1', 'a1', 'd1');
+
+  assert.equal(estado.campo.p1[0].Vida, 10);
+  assert.equal(estado.campo.p2.length, 0);
+  assert.equal(estado.jogadores.p2.cemiterio[0].id, 'd1');
 });
 
 test('atacarFortaleza soma dano de atacantes válidos', () => {

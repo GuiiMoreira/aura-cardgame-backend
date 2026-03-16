@@ -11,6 +11,7 @@ Backend em Node.js para um jogo de cartas online em tempo real, usando Socket.IO
 - `server.js` - Entrypoint do servidor. Inicializa Express, Socket.IO e conecta ao Firestore.
 - `sockets/manager.js` - Gerencia conexões Socket.IO, matchmaking, criação de partidas e ações de jogo (jogar carta, atacar etc).
 - `game/logic.js` - Lógica de criação do estado inicial do jogo (embaralhar, comprar cartas, gerar recursos iniciais).
+- `game/abilities.js` - Registry de habilidades por chave (`tipo`) e hooks de execução (`beforeAttack`, `afterAttack`, `onSummon`, `onDeath`).
 - `data/mockDeck.js` - Exemplo de baralho estático usado em testes ou desenvolvimento.
 - `scripts/import.js` - Script para importar cartas do JSON (`scripts/cartas.json`) para o Firestore.
 
@@ -47,7 +48,23 @@ Documentos de cartas usadas pelos baralhos. Cada documento deve ter pelo menos:
 
 - `id` (string) - identificador (usado em `mockDeck` e em baralhos)
 - `Nome`, `Força`, `Vida`, `C`, `M`, `O`, `A` (atributos de custo/força/vida)
-- `Mecânica`, `DescricaoMecanica` (opcional)
+- `habilidades` (opcional): array normalizado com formato `{ tipo: string, valor?: number }`
+
+Exemplo de carta com habilidade:
+
+```json
+{
+  "id": "carta-123",
+  "Nome": "Elemental Instável",
+  "Força": 20,
+  "Vida": 50,
+  "C": 3,
+  "M": 1,
+  "O": 0,
+  "A": 0,
+  "habilidades": [{ "tipo": "INSTAVEL", "valor": 2 }]
+}
+```
 
 > O script `scripts/import.js` envia os dados de `scripts/cartas.json` para essa coleção.
 > O importador usa `item.id` como ID do documento em `cartas_mestras` (upsert com merge), mantendo consistência com os IDs referenciados nos baralhos.
@@ -163,6 +180,31 @@ As regras críticas de partida agora ficam isoladas em funções de domínio pur
 - `declararAtaque(estado, userId, atacanteId, alvoId)`
 
 O arquivo `sockets/manager.js` ficou focado em validar payload/socket/contexto e delegar as regras para o domínio.
+
+### Habilidades suportadas
+
+- `INSTAVEL` (`beforeAttack`): causa `valor * 10` de dano no atacante e no alvo antes da troca normal de dano.
+- `IMPACTO` (`onSummon`): ao entrar em campo, causa `valor` de dano direto na fortaleza inimiga.
+- `ULTIMO_SUSPIRO` (`onDeath`): ao morrer, causa `valor` de dano direto na fortaleza inimiga.
+
+### Ordem de resolução de efeitos (padronizada)
+
+No `declararAtaque`, os efeitos seguem sempre esta ordem:
+
+1. `beforeAttack` do atacante.
+2. `beforeAttack` do defensor.
+3. Troca de dano base (simultânea) se ambos ainda estiverem vivos.
+4. `afterAttack` do atacante.
+5. `afterAttack` do defensor.
+6. Exaustão do atacante.
+7. Resolução de mortes na ordem de jogador ativo -> defensor (inclui `onDeath` e ida ao cemitério, repetindo até estabilizar).
+
+No `jogarCarta`, a ordem é:
+
+1. Pagamento de custo.
+2. Carta entra em campo exausta.
+3. `onSummon` da carta.
+4. Resolução de mortes pendentes na ordem de jogador ativo -> oponente.
 
 ## 🧪 Testes
 
