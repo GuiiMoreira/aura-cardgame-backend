@@ -238,10 +238,23 @@ async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
     return 0;
   }
 
+  const agora = new Date();
+  const expiradas = [];
+  const salasValidas = [];
+
   snapshot.forEach((doc) => {
     const data = doc.data();
     const sala = data.sala || doc.id;
     const estado = data.estadoCompleto || data.estado;
+
+    if (data?.expiresAt instanceof Date && data.expiresAt <= agora) {
+      expiradas.push(doc.ref);
+      logger.info('Partida ativa expirada ignorada durante recuperação.', {
+        sala,
+        matchId: sala,
+      });
+      return;
+    }
 
     if (!sala || !estado?.jogadores) {
       logger.warn('Documento inválido em partidas_ativas, ignorando recuperação.', {
@@ -258,10 +271,15 @@ async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
     }, {});
 
     jogosAtivos[sala] = { estado, jogadores };
+    salasValidas.push({ sala, doc });
   });
 
   const batch = db.batch();
-  snapshot.docs.forEach((doc) => {
+  expiradas.forEach((ref) => {
+    batch.delete(ref);
+  });
+
+  salasValidas.forEach(({ doc }) => {
     batch.set(
       doc.ref,
       {
@@ -716,6 +734,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
 }
 
 gerenciarSockets.carregarPartidasRecuperaveis = carregarPartidasRecuperaveis;
+gerenciarSockets.limparPartidasAbandonadas = limparPartidasAbandonadas;
 gerenciarSockets.iniciarLimpezaPeriodica = iniciarLimpezaPeriodica;
 gerenciarSockets.getMetrics = getMetrics;
 gerenciarSockets.__testables = {
