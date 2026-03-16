@@ -1,0 +1,41 @@
+module.exports = [
+  {
+    ignores: ['node_modules/**', 'coverage/**'],
+  },
+  {
+    files: ['**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'commonjs',
+      globals: {
+        console: 'readonly',
+        module: 'readonly',
+        require: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+        Buffer: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        WebSocket: 'readonly',
+        fetch: 'readonly',
+        Headers: 'readonly',
+        Request: 'readonly',
+        Response: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
+        AbortController: 'readonly',
+        Blob: 'readonly',
+        File: 'readonly',
+        FormData: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+      'no-undef': 'error',
+    },
+  },
+];
