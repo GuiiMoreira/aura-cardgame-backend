@@ -168,7 +168,7 @@ Os testes cobrem fluxos críticos: consumo de recursos, exaustão de cartas, dan
 
 - **Alterar fluxo de matchmaking**: Modifique `sockets/manager.js` para suportar matchmaking com filas maiores, salas públicas, prontos, etc.
 - **Aprimorar regras de combate**: Edite `sockets/manager.js` (ações) ou mova as regras para `game/logic.js` para separar preocupações.
-- **Persistir partidas**: Adicione gravação da posição atual no Firestore para permitir reconexão.
+- **Persistir partidas**: já implementado com snapshots em `partidas_ativas` e arquivamento em `partidas_historico`.
 
 ---
 
@@ -182,3 +182,41 @@ Os testes cobrem fluxos críticos: consumo de recursos, exaustão de cartas, dan
 ## ✅ Licença
 
 Coloque aqui sua licença preferida (MIT, Apache 2.0, etc.).
+
+
+## 💾 Persistência de Partidas no Firestore
+
+### Coleção `partidas_ativas` (schema mínimo + metadados)
+Cada documento usa `sala` como ID e mantém:
+- `sala` (string)
+- `estado` (objeto completo da partida)
+- `jogadores` (objeto com status de conexão por `uid`)
+- `updatedAt` (Date)
+
+Campos adicionais operacionais:
+- `status` (`ativa` | `recuperavel`)
+- `recuperavel` (boolean)
+- `expiresAt` (Date para política TTL/limpeza)
+
+### Fluxo de persistência
+- Ao criar matchmaking: salva snapshot inicial em `partidas_ativas`.
+- Após cada ação válida (`passar_turno`, `jogar_carta`, `atacar_fortaleza`, `declarar_ataque`): atualiza snapshot da sala.
+- Em reconexão/desconexão: atualiza status para apoiar recuperação de sessão.
+- No fim da partida: copia para `partidas_historico` e remove de `partidas_ativas`.
+
+### Recuperação no startup
+No boot (`server.js`), o backend carrega partidas de `partidas_ativas` com status não finalizado e as marca como `recuperavel`, permitindo reconexão dos jogadores.
+
+### TTL / limpeza de partidas abandonadas
+- Campo `expiresAt` é renovado a cada snapshot (janela padrão: 24h).
+- Limpeza periódica no backend roda a cada 15 minutos para remover documentos expirados (`status = recuperavel`).
+- Recomenda-se também habilitar **Firestore TTL** em produção usando `expiresAt` para limpeza automática server-side.
+
+### Custo, performance e limites
+- **Writes**: 1 escrita por ação válida da partida (+ escritas de status em reconexão/desconexão).
+- **Reads no startup**: leitura de partidas ativas/recuperáveis para reidratar memória.
+- **Documento grande**: `estado` cresce com tamanho de mão/campo/baralho; o limite do Firestore por documento é **1 MiB**.
+- **Boas práticas**:
+  - manter no snapshot apenas estado necessário para retomar a sessão;
+  - evitar histórico de eventos ilimitado dentro do mesmo documento;
+  - para auditoria detalhada, gravar eventos em subcoleção (`partidas_historico/{sala}/eventos`) em vez de inchar `partidas_ativas`.

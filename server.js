@@ -38,57 +38,65 @@ function validarCredenciais(serviceAccount) {
     }
 }
 
-let serviceAccount;
-try {
-    serviceAccount = carregarCredenciaisFirebase();
-    validarCredenciais(serviceAccount);
-} catch (error) {
-    console.error(`❌ Falha na inicialização das credenciais Firebase: ${error.message}`);
-    process.exit(1);
+async function bootstrap() {
+    let serviceAccount;
+    try {
+        serviceAccount = carregarCredenciaisFirebase();
+        validarCredenciais(serviceAccount);
+    } catch (error) {
+        console.error(`❌ Falha na inicialização das credenciais Firebase: ${error.message}`);
+        process.exit(1);
+    }
+
+    admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+    });
+
+    const db = admin.firestore();
+
+    const app = express();
+    app.use(cors());
+
+    const server = http.createServer(app);
+    const io = new Server(server, {
+        cors: {
+            origin: 'http://localhost:5173',
+            methods: ['GET', 'POST'],
+        },
+    });
+
+    io.use(async (socket, next) => {
+        const token = socket.handshake?.auth?.token;
+
+        if (!token || typeof token !== 'string') {
+            socket.authError = 'Token de autenticação ausente ou inválido.';
+            return next();
+        }
+
+        try {
+            const decodedToken = await admin.auth().verifyIdToken(token);
+            socket.user = {
+                uid: decodedToken.uid,
+                ...decodedToken,
+            };
+        } catch (error) {
+            socket.authError = 'Token de autenticação inválido ou expirado.';
+        }
+
+        return next();
+    });
+
+    await gerenciarSockets.carregarPartidasRecuperaveis(db);
+    gerenciarSockets.iniciarLimpezaPeriodica(db);
+    gerenciarSockets(io, db);
+
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => {
+        console.log(`🚀 Servidor de jogo rodando na porta ${PORT}`);
+    });
 }
 
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-});
-
-const db = admin.firestore();
-
-const app = express();
-app.use(cors());
-
-const server = http.createServer(app);
-const io = new Server(server, {
-    cors: {
-        origin: 'http://localhost:5173',
-        methods: ['GET', 'POST'],
-    },
-});
-
-io.use(async (socket, next) => {
-    const token = socket.handshake?.auth?.token;
-
-    if (!token || typeof token !== 'string') {
-        socket.authError = 'Token de autenticação ausente ou inválido.';
-        return next();
-    }
-
-    try {
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        socket.user = {
-            uid: decodedToken.uid,
-            ...decodedToken,
-        };
-    } catch (error) {
-        socket.authError = 'Token de autenticação inválido ou expirado.';
-    }
-
-    return next();
-});
-
-const PORT = process.env.PORT || 3000;
-
-gerenciarSockets(io, db);
-
-server.listen(PORT, () => {
-    console.log(`🚀 Servidor de jogo rodando na porta ${PORT}`);
+bootstrap().catch((error) => {
+    console.error('❌ Falha fatal ao iniciar o servidor:', error);
+    process.exit(1);
 });
