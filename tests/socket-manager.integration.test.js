@@ -273,9 +273,9 @@ test('integração socket: payload inválido em eventos e servidor continua est�
     const erroAtaque = await waitForEvent(p1, 'erro_partida');
     assert.match(erroAtaque.motivo, /atacanteId\/alvoId inválido/);
 
-    p1.emit('reconectar_partida', {});
+    p1.emit('reconectar_partida', { sala: 'sala_inexistente' });
     const erroReconexao = await waitForEvent(p1, 'erro_partida');
-    assert.match(erroReconexao.motivo, /Payload inválido para reconectar_partida/);
+    assert.match(erroReconexao.motivo, /Partida não encontrada para reconexão/);
 
     p1.emit('passar_turno', { sala });
     const atualizado = await waitForEvent(p1, 'estado_atualizado');
@@ -331,6 +331,65 @@ test('integração socket: desconexão e reconexão preservam partida ativa', as
     await esperarSilencio(p2, 'fim_de_jogo', 500);
     p1Reconectado.disconnect();
   } finally {
+    await encerrar();
+  }
+});
+
+
+test('integração socket: reconexão sem sala usa vínculo uid -> sala ativa', async () => {
+  const { p1, p2, encerrar, criarCliente } = await criarAmbiente();
+
+  try {
+    p1.emit('buscar_partida', { deckId: 'deck_p1' });
+    p2.emit('buscar_partida', { deckId: 'deck_p2' });
+
+    const partida = await waitForEvent(p1, 'partida_encontrada');
+    await waitForEvent(p2, 'partida_encontrada');
+
+    p1.disconnect();
+
+    const p1Reconectado = criarCliente('p1');
+    await new Promise((resolve) => p1Reconectado.on('connect', resolve));
+
+    p1Reconectado.emit('reconectar_partida', {});
+    const estadoReconectado = await waitForEvent(p1Reconectado, 'estado_atualizado');
+    assert.equal(estadoReconectado.sala, partida.sala);
+
+    await esperarSilencio(p2, 'fim_de_jogo', 500);
+    p1Reconectado.disconnect();
+  } finally {
+    await encerrar();
+  }
+});
+
+test('integração socket: timeout de reconexão encerra partida por abandono', async () => {
+  const setTimeoutTemp = global.setTimeout;
+  global.setTimeout = (fn, ms, ...args) => {
+    if (ms === tempoLimiteReconexaoMs) {
+      return setTimeoutOriginal(fn, 20, ...args);
+    }
+
+    return setTimeoutTemp(fn, ms, ...args);
+  };
+
+  const { p1, p2, encerrar } = await criarAmbiente();
+
+  try {
+    p1.emit('buscar_partida', { deckId: 'deck_p1' });
+    p2.emit('buscar_partida', { deckId: 'deck_p2' });
+
+    const partida = await waitForEvent(p1, 'partida_encontrada');
+    await waitForEvent(p2, 'partida_encontrada');
+
+    p1.disconnect();
+
+    const fim = await waitForEvent(p2, 'fim_de_jogo');
+    assert.equal(fim.sala, partida.sala);
+    assert.equal(fim.motivo, 'abandono');
+    assert.equal(fim.vencedor, 'p2');
+    assert.equal(fim.jogadorDesconectado, 'p1');
+  } finally {
+    global.setTimeout = setTimeoutTemp;
     await encerrar();
   }
 });
