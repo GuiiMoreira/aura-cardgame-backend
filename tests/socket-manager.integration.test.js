@@ -373,7 +373,7 @@ test('integração socket: reconexão sem sala usa vínculo uid -> sala ativa', 
   }
 });
 
-test('integração socket: timeout de reconexão encerra partida por abandono', async () => {
+test('integração socket: timeout de reconexão encerra partida por desconexão', async () => {
   const setTimeoutTemp = global.setTimeout;
   global.setTimeout = (fn, ms, ...args) => {
     if (ms === tempoLimiteReconexaoMs) {
@@ -396,7 +396,7 @@ test('integração socket: timeout de reconexão encerra partida por abandono', 
 
     const fim = await waitForEvent(p2, 'fim_de_jogo');
     assert.equal(fim.sala, partida.sala);
-    assert.equal(fim.motivo, 'abandono');
+    assert.equal(fim.motivo, 'desconexao');
     assert.equal(fim.vencedor, 'p2');
     assert.equal(fim.jogadorDesconectado, 'p1');
 
