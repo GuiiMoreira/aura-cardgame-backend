@@ -17,9 +17,11 @@ const socket = io('http://localhost:3000', {
 });
 ```
 
-- `token` é obrigatório.
+- `token` é obrigatório e é validado pelo backend com `firebase-admin` (`admin.auth().verifyIdToken`) no handshake.
 - `protocolVersion` é recomendado.
 - Se `protocolVersion` estiver ausente, o servidor usa compatibilidade mínima com `legacy-v1`.
+- Após autenticar, o servidor popula `socket.user.uid` e esse valor é a única identidade usada nas ações (qualquer `userId` enviado no payload é ignorado).
+- Se o token estiver ausente/inválido/expirado, o servidor emite `erro_partida` e desconecta o socket.
 
 ### Eventos cliente → servidor
 

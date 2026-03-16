@@ -21,8 +21,8 @@ Backend em Node.js para um jogo de cartas online em tempo real, usando Socket.IO
 
 1. **Autenticação + matchmaking rápido (1v1)**
    - O cliente conecta no Socket.IO enviando `auth.token` (Firebase ID Token).
-   - O servidor valida o token com Firebase Auth Admin SDK e usa sempre `socket.user.uid` como identidade do jogador.
-   - Depois de autenticado, o jogador envia `buscar_partida` apenas com `deckId`.
+   - O servidor valida o token com Firebase Auth Admin SDK (`admin.auth().verifyIdToken`) durante o handshake e salva o resultado em `socket.user` (ex.: `socket.user.uid`).
+   - Depois de autenticado, o jogador envia `buscar_partida` apenas com `deckId` (o backend ignora qualquer `userId` no payload e usa somente `socket.user.uid`).
    - O servidor faz uma fila simples de um jogador. Quando há dois jogadores, forma uma sala e cria a partida.
 
 2. **Criação do estado inicial**
@@ -134,6 +134,8 @@ O contrato oficial e consolidado está em **`docs/socket-contract.md`**.
 
 - `auth.token` (**obrigatório**): Firebase ID Token.
 - `auth.protocolVersion` (**recomendado**): versão do protocolo (atual: `1.1.0`).
+
+- Em caso de token ausente/inválido/expirado, o backend responde `erro_partida` e encerra a conexão do socket.
 
 Exemplo:
 

@@ -98,6 +98,11 @@ function emitirErroPartida(socket, motivo, context = {}, logger = baseLogger) {
   logger.warn('Evento erro_partida emitido.', context);
 }
 
+function emitirErroAutenticacao(socket, motivo, context = {}, logger = baseLogger) {
+  emitirErroPartida(socket, motivo, context, logger);
+  socket.disconnect(true);
+}
+
 function payloadInvalido(socket, mensagem, context = {}, logger = baseLogger) {
   emitirErroPartida(socket, mensagem, context, logger);
 }
@@ -352,8 +357,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
     if (!socket.user) {
       const motivo = socket.authError || 'Falha na autenticação do socket.';
       const requestId = socket.requestId || createRequestId();
-      emitirErroPartida(socket, motivo, { requestId, userId: null }, logger);
-      socket.disconnect(true);
+      emitirErroAutenticacao(socket, motivo, { requestId, userId: null }, logger);
       metrics.conexoesAtivas -= 1;
       return;
     }
@@ -386,8 +390,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
 
       try {
         if (!userId) {
-          emitirErroPartida(socket, 'Socket não autenticado.', contexto, logger);
-          socket.disconnect(true);
+          emitirErroAutenticacao(socket, 'Socket não autenticado.', contexto, logger);
           return;
         }
 
@@ -491,14 +494,14 @@ function gerenciarSockets(io, db, logger = baseLogger) {
     });
 
     const criarManipuladorDeAcao = (nomeAcao, logicaAcao) => {
-      socket.on(nomeAcao, async (dados = {}) => {
+      socket.on(nomeAcao, async (payload = {}) => {
         const startedAt = process.hrtime.bigint();
         const requestId = createRequestId();
         let sala = null;
         const userId = getSocketUid(socket);
 
         try {
-          if (!dados || typeof dados !== 'object' || typeof dados.sala !== 'string') {
+          if (!payload || typeof payload !== 'object' || typeof payload.sala !== 'string') {
             payloadInvalido(
               socket,
               `Payload inválido para ${nomeAcao}.`,
@@ -508,7 +511,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
             return;
           }
 
-          sala = dados.sala;
+          sala = payload.sala;
           const jogo = jogosAtivos[sala];
           if (!jogo) return;
 
@@ -522,7 +525,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           )
             return;
 
-          logicaAcao(jogo.estado, userId, dados);
+          logicaAcao(jogo.estado, userId, payload);
           await persistirPartidaAtiva(db, sala, jogo, { status: 'ativa', recuperavel: true });
 
           const oponenteId = Object.keys(jogo.estado.jogadores).find((id) => id !== userId);
@@ -579,7 +582,7 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         }
 
         if (!userId) {
-          emitirErroPartida(
+          emitirErroAutenticacao(
             socket,
             'Socket não autenticado para reconexão.',
             { requestId, userId, sala: salaAlvo, matchId: salaAlvo },
