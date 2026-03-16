@@ -9,11 +9,12 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 
 const gerenciarSockets = require('./sockets/manager');
+const { logger, createRequestId, SENSITIVE_KEYS } = require('./logger');
 
 function carregarCredenciaisFirebase() {
     if (process.env.GOOGLE_CREDENTIALS_BASE64) {
         try {
-            console.log('✅ Variável GOOGLE_CREDENTIALS_BASE64 encontrada. Decodificando...');
+            logger.info('GOOGLE_CREDENTIALS_BASE64 encontrada, iniciando decodificação.');
             const credentialsJson = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf8');
             return JSON.parse(credentialsJson);
         } catch (error) {
@@ -23,7 +24,7 @@ function carregarCredenciaisFirebase() {
 
     const credenciaisLocais = path.resolve(__dirname, 'serviceAccountKey.json');
     if (fs.existsSync(credenciaisLocais)) {
-        console.log('⚠️ GOOGLE_CREDENTIALS_BASE64 não encontrada. Carregando credenciais locais...');
+        logger.warn('GOOGLE_CREDENTIALS_BASE64 ausente, carregando credenciais locais.');
         return require(credenciaisLocais);
     }
 
@@ -38,13 +39,76 @@ function validarCredenciais(serviceAccount) {
     }
 }
 
+function configurarObservabilidadeHttp(app, getSocketMetrics) {
+    app.use((req, res, next) => {
+        const requestId = req.header('x-request-id') || createRequestId();
+        req.requestId = requestId;
+        res.setHeader('x-request-id', requestId);
+
+        const startedAt = process.hrtime.bigint();
+        res.on('finish', () => {
+            const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+            const baseContext = {
+                requestId,
+                method: req.method,
+                route: req.originalUrl,
+                statusCode: res.statusCode,
+                latencyMs: Number(durationMs.toFixed(2)),
+            };
+
+            if (res.statusCode >= 500) {
+                logger.error('HTTP request finalizada com erro.', baseContext);
+            } else if (res.statusCode >= 400) {
+                logger.warn('HTTP request finalizada com warning.', baseContext);
+            } else {
+                logger.info('HTTP request finalizada.', baseContext);
+            }
+        });
+
+        next();
+    });
+
+    app.get('/health', (req, res) => {
+        const metrics = getSocketMetrics();
+        res.status(200).json({
+            status: 'ok',
+            requestId: req.requestId,
+            uptimeSeconds: Math.floor(process.uptime()),
+            timestamp: new Date().toISOString(),
+            metrics,
+        });
+    });
+
+    app.get('/ready', (req, res) => {
+        const ready = admin.apps.length > 0;
+        const metrics = getSocketMetrics();
+
+        if (!ready) {
+            logger.warn('Readiness check falhou.', { requestId: req.requestId });
+            res.status(503).json({
+                status: 'not_ready',
+                requestId: req.requestId,
+                metrics,
+            });
+            return;
+        }
+
+        res.status(200).json({
+            status: 'ready',
+            requestId: req.requestId,
+            metrics,
+            redactionPolicy: SENSITIVE_KEYS,
+        });
+    });
+}
+
 async function bootstrap() {
     let serviceAccount;
     try {
         serviceAccount = carregarCredenciaisFirebase();
         validarCredenciais(serviceAccount);
     } catch (error) {
-        console.error(`❌ Falha na inicialização das credenciais Firebase: ${error.message}`);
+        logger.error('Falha na inicialização das credenciais Firebase.', { error });
         process.exit(1);
     }
 
@@ -66,10 +130,13 @@ async function bootstrap() {
     });
 
     io.use(async (socket, next) => {
-        const token = socket.handshake?.auth?.token;
+        const requestId = socket.handshake?.headers?.['x-request-id'] || createRequestId();
+        socket.requestId = requestId;
 
+        const token = socket.handshake?.auth?.token;
         if (!token || typeof token !== 'string') {
             socket.authError = 'Token de autenticação ausente ou inválido.';
+            logger.warn('Handshake de socket sem token válido.', { requestId, socketId: socket.id });
             return next();
         }
 
@@ -79,24 +146,36 @@ async function bootstrap() {
                 uid: decodedToken.uid,
                 ...decodedToken,
             };
+            logger.info('Handshake de socket autenticado.', {
+                requestId,
+                socketId: socket.id,
+                userId: socket.user.uid,
+            });
         } catch (error) {
             socket.authError = 'Token de autenticação inválido ou expirado.';
+            logger.warn('Falha ao validar token no handshake do socket.', {
+                requestId,
+                socketId: socket.id,
+                error,
+            });
         }
 
         return next();
     });
 
-    await gerenciarSockets.carregarPartidasRecuperaveis(db);
-    gerenciarSockets.iniciarLimpezaPeriodica(db);
-    gerenciarSockets(io, db);
+    await gerenciarSockets.carregarPartidasRecuperaveis(db, logger);
+    gerenciarSockets.iniciarLimpezaPeriodica(db, logger);
+    gerenciarSockets(io, db, logger);
+
+    configurarObservabilidadeHttp(app, gerenciarSockets.getMetrics);
 
     const PORT = process.env.PORT || 3000;
     server.listen(PORT, () => {
-        console.log(`🚀 Servidor de jogo rodando na porta ${PORT}`);
+        logger.info('Servidor de jogo inicializado.', { port: PORT });
     });
 }
 
 bootstrap().catch((error) => {
-    console.error('❌ Falha fatal ao iniciar o servidor:', error);
+    logger.error('Falha fatal ao iniciar o servidor.', { error });
     process.exit(1);
 });
