@@ -83,7 +83,7 @@ Ao iniciar uma partida, o backend valida o deck antes de montar o estado inicial
 - **Cópias por carta**: no máximo **3 cópias** do mesmo ID.
 - **Integridade de catálogo**: todos os IDs do deck devem existir em `cartas_mestras`.
 
-Se alguma regra falhar, a partida é abortada e os jogadores recebem `erro_partida` com motivo explícito (ex.: tamanho inválido, excesso de cópias ou IDs ausentes). O backend também registra log de auditoria com contexto (`uid`, `deckId`, motivo e detalhes).
+Se alguma regra falhar, a partida é abortada e os jogadores recebem `erro_partida` com motivo explícito e acionável (ex.: `Baralho inválido: esperado 30 cartas...`, `limite de 3 cópias...` ou `Baralho inválido (deckId): IDs ausentes em cartas_mestras...`). O backend também registra log de auditoria com contexto (`uid`, `deckId`, motivo e detalhes).
 
 ---
 
