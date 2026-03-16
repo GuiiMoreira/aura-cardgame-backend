@@ -141,32 +141,29 @@ async function bootstrap() {
 
     const token = socket.handshake?.auth?.token;
     if (!token || typeof token !== 'string') {
-      socket.authError = 'Token de autenticação ausente ou inválido.';
       logger.warn('Handshake de socket sem token válido.', { requestId, socketId: socket.id });
-      return next();
+      return next(new Error('Token de autenticação ausente ou inválido.'));
     }
 
     try {
       const decodedToken = await admin.auth().verifyIdToken(token);
       socket.user = {
         uid: decodedToken.uid,
-        ...decodedToken,
       };
       logger.info('Handshake de socket autenticado.', {
         requestId,
         socketId: socket.id,
         userId: socket.user.uid,
       });
+      return next();
     } catch (error) {
-      socket.authError = 'Token de autenticação inválido ou expirado.';
       logger.warn('Falha ao validar token no handshake do socket.', {
         requestId,
         socketId: socket.id,
         error,
       });
+      return next(new Error('Token de autenticação inválido ou expirado.'));
     }
-
-    return next();
   });
 
   await gerenciarSockets.carregarPartidasRecuperaveis(db, logger);

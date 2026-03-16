@@ -198,4 +198,4 @@ const socket = io('http://localhost:3000', {
 });
 ```
 
-Se o token for inválido/ausente, o servidor envia `erro_partida` com `motivo` e desconecta o socket.
+Se o token for inválido/ausente, o middleware de handshake recusa a conexão e o cliente recebe `connect_error`.
