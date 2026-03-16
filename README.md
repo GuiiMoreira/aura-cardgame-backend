@@ -11,7 +11,7 @@ Backend em Node.js para um jogo de cartas online em tempo real, usando Socket.IO
 - `server.js` - Entrypoint do servidor. Inicializa Express, Socket.IO e conecta ao Firestore.
 - `sockets/manager.js` - Gerencia conexões Socket.IO, matchmaking, criação de partidas e ações de jogo (jogar carta, atacar etc).
 - `game/logic.js` - Lógica de criação do estado inicial do jogo (embaralhar, comprar cartas, gerar recursos iniciais).
-- `game/abilities.js` - Registry de habilidades por chave (`tipo`) e hooks de execução (`beforeAttack`, `afterAttack`, `onSummon`, `onDeath`).
+- `game/abilities.js` - Registry de habilidades por chave (`tipo`) e hooks de execução (`onSummon`, `beforeAttack`, `afterAttack`, `onDeath`, `onTurnStart`) com prioridade determinística.
 - `data/mockDeck.js` - Exemplo de baralho estático usado em testes ou desenvolvimento.
 - `scripts/import.js` - Script para importar cartas do JSON (`scripts/cartas.json`) para o Firestore.
 
@@ -171,8 +171,14 @@ O arquivo `sockets/manager.js` ficou focado em validar payload/socket/contexto e
 - `INSTAVEL` (`beforeAttack`): causa `valor * 10` de dano no atacante e no alvo antes da troca normal de dano.
 - `IMPACTO` (`onSummon`): ao entrar em campo, causa `valor` de dano direto na fortaleza inimiga.
 - `ULTIMO_SUSPIRO` (`onDeath`): ao morrer, causa `valor` de dano direto na fortaleza inimiga.
+- `REGENERACAO` (`onTurnStart`): no início do turno do controlador, cura `valor` de Vida da própria unidade.
 
 ### Ordem de resolução de efeitos (padronizada)
+
+Em qualquer hook, quando uma carta possui múltiplas habilidades do mesmo evento, a execução é determinística:
+
+1. Maior `prioridade` primeiro (ordem decrescente).
+2. Em empate de prioridade, vale a ordem original em `habilidades[]` (estável).
 
 No `declararAtaque`, os efeitos seguem sempre esta ordem:
 
@@ -190,6 +196,14 @@ No `jogarCarta`, a ordem é:
 2. Carta entra em campo exausta.
 3. `onSummon` da carta.
 4. Resolução de mortes pendentes na ordem de jogador ativo -> oponente.
+
+No `passarTurno`, a ordem é:
+
+1. Troca do jogador ativo para o oponente.
+2. Compra de carta (se houver baralho).
+3. Geração de recursos respeitando teto.
+4. Remoção de exaustão das cartas em campo do novo jogador ativo.
+5. `onTurnStart` para cada carta do novo jogador ativo (com a regra de prioridade/empate acima).
 
 ## 🧪 Testes
 

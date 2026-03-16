@@ -1,7 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { declararAtaque, jogarCarta } = require('../game/actions');
+const { passarTurno, declararAtaque, jogarCarta } = require('../game/actions');
+const { abilityRegistry, getAbilitiesFromCard } = require('../game/abilities');
 
 function criarEstadoBase() {
   return {
@@ -71,4 +72,60 @@ test('ULTIMO_SUSPIRO ativa no onDeath com ordem de resolução previsível', () 
   assert.equal(estado.jogadores.p1.vida, 94);
   assert.deepEqual(estado.jogadores.p1.cemiterio.map((c) => c.id), ['atk']);
   assert.deepEqual(estado.jogadores.p2.cemiterio.map((c) => c.id), ['def']);
+});
+
+test('REGENERACAO ativa no onTurnStart durante passarTurno', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p2.push({
+    id: 'guardiao',
+    Força: 5,
+    Vida: 10,
+    exaustao: true,
+    habilidades: [{ tipo: 'REGENERACAO', valor: 3 }],
+  });
+
+  passarTurno(estado, 'p1');
+
+  assert.equal(estado.turno, 'p2');
+  assert.equal(estado.campo.p2[0].exaustao, false);
+  assert.equal(estado.campo.p2[0].Vida, 13);
+});
+
+test('afterAttack é integrado em declararAtaque', () => {
+  const estado = criarEstadoBase();
+  const marcador = [];
+  abilityRegistry.TESTE_AFTER = {
+    afterAttack: ({ sourceCard }) => {
+      marcador.push(sourceCard.id);
+    },
+  };
+
+  estado.campo.p1.push({
+    id: 'atk',
+    Força: 15,
+    Vida: 20,
+    exaustao: false,
+    habilidades: [{ tipo: 'TESTE_AFTER' }],
+  });
+  estado.campo.p2.push({ id: 'def', Força: 10, Vida: 20, exaustao: false });
+
+  declararAtaque(estado, 'p1', 'atk', 'def');
+
+  assert.deepEqual(marcador, ['atk']);
+  delete abilityRegistry.TESTE_AFTER;
+});
+
+test('normalização de habilidades aceita params.valor e ordena por prioridade/empate', () => {
+  const habilidades = getAbilitiesFromCard({
+    habilidades: [
+      { tipo: 'impacto', params: { valor: 1 }, prioridade: 0 },
+      { tipo: 'IMPACTO', valor: 2, prioridade: 5 },
+      { tipo: 'IMPACTO', valor: 3, prioridade: 5 },
+    ],
+  });
+
+  assert.deepEqual(habilidades.map((h) => h.tipo), ['IMPACTO', 'IMPACTO', 'IMPACTO']);
+  assert.deepEqual(habilidades.map((h) => h.params.valor), [1, 2, 3]);
+  assert.deepEqual(habilidades.map((h) => h.prioridade), [0, 5, 5]);
+  assert.deepEqual(habilidades.map((h) => h.sourceIndex), [0, 1, 2]);
 });
