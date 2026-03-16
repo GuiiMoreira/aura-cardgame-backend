@@ -1,17 +1,62 @@
 const { criarEstadoInicialDoJogo } = require('../game/logic');
 const { passarTurno, jogarCarta, atacarFortaleza, declararAtaque } = require('../game/actions');
+const { createRequestId, logger: baseLogger } = require('../logger');
 
 const jogosAtivos = {};
 let filaDeEspera = null;
 const TEMPO_LIMITE_RECONEXAO_MS = 60 * 1000;
 const TTL_PARTIDA_ABANDONADA_MS = 24 * 60 * 60 * 1000;
 
-function emitirErroPartida(socket, motivo) {
-    socket.emit('erro_partida', { motivo });
+const metrics = {
+    conexoesAtivas: 0,
+    matchmakingPendente: 0,
+    partidasAtivas: 0,
+    latenciaPorEvento: {},
+};
+
+function updateQueueMetric() {
+    metrics.matchmakingPendente = filaDeEspera ? 1 : 0;
 }
 
-function payloadInvalido(socket, mensagem) {
-    emitirErroPartida(socket, mensagem);
+function updateActiveMatchesMetric() {
+    metrics.partidasAtivas = Object.keys(jogosAtivos).length;
+}
+
+function registrarLatenciaEvento(evento, startedAt) {
+    const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const atual = metrics.latenciaPorEvento[evento] || {
+        totalMs: 0,
+        count: 0,
+        maxMs: 0,
+        lastMs: 0,
+        avgMs: 0,
+    };
+
+    atual.count += 1;
+    atual.totalMs += durationMs;
+    atual.lastMs = Number(durationMs.toFixed(2));
+    atual.maxMs = Math.max(atual.maxMs, atual.lastMs);
+    atual.avgMs = Number((atual.totalMs / atual.count).toFixed(2));
+
+    metrics.latenciaPorEvento[evento] = atual;
+}
+
+function getMetrics() {
+    return {
+        conexoesAtivas: metrics.conexoesAtivas,
+        matchmakingPendente: metrics.matchmakingPendente,
+        partidasAtivas: metrics.partidasAtivas,
+        latenciaPorEvento: metrics.latenciaPorEvento,
+    };
+}
+
+function emitirErroPartida(socket, motivo, context = {}, logger = baseLogger) {
+    socket.emit('erro_partida', { motivo, ...context });
+    logger.warn('Evento erro_partida emitido.', context);
+}
+
+function payloadInvalido(socket, mensagem, context = {}, logger = baseLogger) {
+    emitirErroPartida(socket, mensagem, context, logger);
 }
 
 function getSocketUid(socket) {
@@ -64,7 +109,7 @@ async function moverPartidaParaHistorico(db, sala, jogo, payloadFinal = {}) {
     await db.collection('partidas_ativas').doc(sala).delete();
 }
 
-async function encerrarPartida(io, db, sala, payload) {
+async function encerrarPartida(io, db, sala, payload, logger = baseLogger) {
     const jogo = jogosAtivos[sala];
     if (!jogo) return;
 
@@ -73,11 +118,13 @@ async function encerrarPartida(io, db, sala, payload) {
     try {
         await moverPartidaParaHistorico(db, sala, jogo, payload);
     } catch (error) {
-        console.error(`[PERSISTÊNCIA] Falha ao mover partida ${sala} para histórico:`, error);
+        logger.error('Falha ao mover partida para histórico.', { sala, matchId: sala, error });
     }
 
-    io.to(sala).emit('fim_de_jogo', payload);
+    io.to(sala).emit('fim_de_jogo', { ...payload, sala, matchId: sala });
     delete jogosAtivos[sala];
+    updateActiveMatchesMetric();
+    logger.info('Partida encerrada.', { sala, matchId: sala, payload });
 }
 
 function buscarJogoPorSocketId(socketId) {
@@ -86,11 +133,11 @@ function buscarJogoPorSocketId(socketId) {
     });
 }
 
-async function carregarPartidasRecuperaveis(db) {
+async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
     const snapshot = await db.collection('partidas_ativas').where('status', 'in', ['ativa', 'recuperavel']).get();
 
     if (snapshot.empty) {
-        console.log('[RECOVERY] Nenhuma partida ativa para recuperar no startup.');
+        logger.info('Nenhuma partida ativa para recuperar no startup.');
         return 0;
     }
 
@@ -100,7 +147,7 @@ async function carregarPartidasRecuperaveis(db) {
         const estado = data.estado;
 
         if (!sala || !estado?.jogadores) {
-            console.warn(`[RECOVERY] Documento inválido em partidas_ativas (${doc.id}). Ignorando.`);
+            logger.warn('Documento inválido em partidas_ativas, ignorando recuperação.', { sala: doc.id, matchId: doc.id });
             return;
         }
 
@@ -126,11 +173,12 @@ async function carregarPartidasRecuperaveis(db) {
     });
     await batch.commit();
 
-    console.log(`[RECOVERY] ${snapshot.size} partida(s) carregada(s) e marcada(s) como recuperável(is).`);
+    updateActiveMatchesMetric();
+    logger.info('Partidas recuperáveis carregadas no startup.', { quantidade: snapshot.size, partidasAtivas: metrics.partidasAtivas });
     return snapshot.size;
 }
 
-async function limparPartidasAbandonadas(db) {
+async function limparPartidasAbandonadas(db, logger = baseLogger) {
     const agora = new Date();
     const snapshot = await db.collection('partidas_ativas')
         .where('expiresAt', '<=', agora)
@@ -143,70 +191,96 @@ async function limparPartidasAbandonadas(db) {
     snapshot.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
 
-    console.log(`[TTL] ${snapshot.size} partida(s) abandonada(s) removida(s) da coleção partidas_ativas.`);
+    logger.info('Partidas abandonadas removidas por TTL.', { quantidade: snapshot.size });
     return snapshot.size;
 }
 
-function iniciarLimpezaPeriodica(db) {
+function iniciarLimpezaPeriodica(db, logger = baseLogger) {
     const intervaloMs = 15 * 60 * 1000;
     setInterval(async () => {
         try {
-            await limparPartidasAbandonadas(db);
+            await limparPartidasAbandonadas(db, logger);
         } catch (error) {
-            console.error('[TTL] Falha na limpeza periódica de partidas abandonadas:', error);
+            logger.error('Falha na limpeza periódica de partidas abandonadas.', { error });
         }
     }, intervaloMs);
 }
 
-function gerenciarSockets(io, db) {
+function gerenciarSockets(io, db, logger = baseLogger) {
     io.on('connection', (socket) => {
+        metrics.conexoesAtivas += 1;
+
         if (!socket.user) {
             const motivo = socket.authError || 'Falha na autenticação do socket.';
-            emitirErroPartida(socket, motivo);
+            const requestId = socket.requestId || createRequestId();
+            emitirErroPartida(socket, motivo, { requestId, userId: null }, logger);
             socket.disconnect(true);
+            metrics.conexoesAtivas -= 1;
             return;
         }
 
         const socketUid = getSocketUid(socket);
-        console.log(`[CONEXÃO] Jogador autenticado conectado: ${socket.id} (uid: ${socketUid})`);
+        const connectionRequestId = socket.requestId || createRequestId();
+        logger.info('Jogador autenticado conectado.', {
+            requestId: connectionRequestId,
+            socketId: socket.id,
+            userId: socketUid,
+            conexoesAtivas: metrics.conexoesAtivas,
+        });
 
         socket.on('buscar_partida', async ({ deckId } = {}) => {
+            const startedAt = process.hrtime.bigint();
+            const requestId = createRequestId();
             const userId = getSocketUid(socket);
-            if (!userId) {
-                emitirErroPartida(socket, 'Socket não autenticado.');
-                socket.disconnect(true);
-                return;
-            }
+            const contexto = { requestId, userId, sala: null, matchId: null };
 
-            if (!deckId) {
-                payloadInvalido(socket, 'deckId é obrigatório para buscar_partida.');
-                return;
-            }
+            try {
+                if (!userId) {
+                    emitirErroPartida(socket, 'Socket não autenticado.', contexto, logger);
+                    socket.disconnect(true);
+                    return;
+                }
 
-            if (filaDeEspera && filaDeEspera.userId === userId) {
-                console.log(`[FILA] Jogador ${userId} já está na fila. Ignorando nova requisição.`);
-                return;
-            }
+                if (!deckId) {
+                    payloadInvalido(socket, 'deckId é obrigatório para buscar_partida.', contexto, logger);
+                    return;
+                }
 
-            console.log(`[FILA] Jogador ${userId} (socket ${socket.id}) protocolou busca com o baralho ${deckId}`);
+                if (filaDeEspera && filaDeEspera.userId === userId) {
+                    logger.warn('Jogador já está na fila, requisição ignorada.', contexto);
+                    return;
+                }
 
-            if (!filaDeEspera) {
-                filaDeEspera = { socket, deckId, userId };
-                socket.emit('status_matchmaking', 'Você está na fila, aguardando outro jogador...');
-                console.log(`[FILA] ${userId} (${socket.id}) é o primeiro na fila. Fila agora tem 1 jogador.`);
-            } else {
-                console.log('[MATCH] Fila tem um jogador. Formando partida...');
+                logger.info('Busca de partida recebida.', { ...contexto, deckId });
+
+                if (!filaDeEspera) {
+                    filaDeEspera = { socket, deckId, userId };
+                    updateQueueMetric();
+                    socket.emit('status_matchmaking', {
+                        mensagem: 'Você está na fila, aguardando outro jogador...',
+                        requestId,
+                        userId,
+                        sala: null,
+                        matchId: null,
+                    });
+                    logger.info('Jogador inserido na fila de matchmaking.', { ...contexto, matchmakingPendente: metrics.matchmakingPendente });
+                    return;
+                }
+
                 const { socket: j1Socket, deckId: d1, userId: u1 } = filaDeEspera;
                 const { socket: j2Socket, deckId: d2, userId: u2 } = { socket, deckId, userId };
-
                 filaDeEspera = null;
-                console.log('[MATCH] Fila esvaziada.');
+                updateQueueMetric();
 
                 const nomeDaSala = `sala_${j1Socket.id}_${j2Socket.id}`;
+                const contextoMatch = { requestId, sala: nomeDaSala, matchId: nomeDaSala, userId };
                 j1Socket.join(nomeDaSala);
                 j2Socket.join(nomeDaSala);
 
-                console.log(`[MATCH] Matchmaking! J1(${u1}) vs J2(${u2}) na sala ${nomeDaSala}`);
+                logger.info('Matchmaking concluído.', {
+                    ...contextoMatch,
+                    jogadores: [{ userId: u1, deckId: d1 }, { userId: u2, deckId: d2 }],
+                });
 
                 try {
                     const estadoInicial = await criarEstadoInicialDoJogo(db, u1, d1, u2, d2);
@@ -217,82 +291,117 @@ function gerenciarSockets(io, db) {
                             [u2]: { socketId: j2Socket.id, conectado: true, timerReconexao: null },
                         },
                     };
+                    updateActiveMatchesMetric();
                     await persistirPartidaAtiva(db, nomeDaSala, jogosAtivos[nomeDaSala], { status: 'ativa', recuperavel: true });
-                    io.to(nomeDaSala).emit('partida_encontrada', { sala: nomeDaSala, estado: estadoInicial });
-                    console.log(`[MATCH] Partida criada e enviada com sucesso para a sala ${nomeDaSala}`);
+                    io.to(nomeDaSala).emit('partida_encontrada', {
+                        sala: nomeDaSala,
+                        matchId: nomeDaSala,
+                        requestId,
+                        estado: estadoInicial,
+                    });
+                    logger.info('Partida criada com sucesso.', { ...contextoMatch, partidasAtivas: metrics.partidasAtivas });
                 } catch (error) {
                     const motivo = error?.code === 'DECK_INVALIDO'
                         ? error.message
                         : 'Não foi possível carregar os baralhos.';
-                    console.error('[MATCH] Erro ao criar estado inicial:', {
-                        sala: nomeDaSala,
-                        jogadores: [{ uid: u1, deckId: d1 }, { uid: u2, deckId: d2 }],
-                        erro: error,
+                    logger.error('Erro ao criar estado inicial da partida.', {
+                        ...contextoMatch,
+                        jogadores: [{ userId: u1, deckId: d1 }, { userId: u2, deckId: d2 }],
+                        error,
                     });
-                    io.to(nomeDaSala).emit('erro_partida', { motivo });
+                    io.to(nomeDaSala).emit('erro_partida', { motivo, requestId, sala: nomeDaSala, matchId: nomeDaSala, userId });
                 }
+            } finally {
+                registrarLatenciaEvento('buscar_partida', startedAt);
             }
         });
 
         const criarManipuladorDeAcao = (nomeAcao, logicaAcao) => {
             socket.on(nomeAcao, async (dados = {}) => {
-                if (!dados || typeof dados !== 'object' || typeof dados.sala !== 'string') {
-                    payloadInvalido(socket, `Payload inválido para ${nomeAcao}.`);
-                    return;
-                }
-
-                const sala = dados.sala;
-                const jogo = jogosAtivos[sala];
-                if (!jogo) return;
-
+                const startedAt = process.hrtime.bigint();
+                const requestId = createRequestId();
+                let sala = null;
                 const userId = getSocketUid(socket);
-                const jogador = jogo.jogadores?.[userId];
-                if (!userId || !jogador || jogador.socketId !== socket.id || !jogador.conectado || userId !== jogo.estado.turno) return;
 
-                logicaAcao(jogo.estado, userId, dados);
-                await persistirPartidaAtiva(db, sala, jogo, { status: 'ativa', recuperavel: true });
+                try {
+                    if (!dados || typeof dados !== 'object' || typeof dados.sala !== 'string') {
+                        payloadInvalido(socket, `Payload inválido para ${nomeAcao}.`, { requestId, userId, sala, matchId: sala }, logger);
+                        return;
+                    }
 
-                const oponenteId = Object.keys(jogo.estado.jogadores).find((id) => id !== userId);
-                if (jogo.estado.jogadores[oponenteId].vida <= 0) {
-                    await encerrarPartida(io, db, sala, { vencedor: userId });
-                } else {
-                    io.to(sala).emit('estado_atualizado', jogo.estado);
+                    sala = dados.sala;
+                    const jogo = jogosAtivos[sala];
+                    if (!jogo) return;
+
+                    const jogador = jogo.jogadores?.[userId];
+                    if (!userId || !jogador || jogador.socketId !== socket.id || !jogador.conectado || userId !== jogo.estado.turno) return;
+
+                    logicaAcao(jogo.estado, userId, dados);
+                    await persistirPartidaAtiva(db, sala, jogo, { status: 'ativa', recuperavel: true });
+
+                    const oponenteId = Object.keys(jogo.estado.jogadores).find((id) => id !== userId);
+                    if (jogo.estado.jogadores[oponenteId].vida <= 0) {
+                        await encerrarPartida(io, db, sala, { vencedor: userId, requestId }, logger);
+                    } else {
+                        io.to(sala).emit('estado_atualizado', {
+                            sala,
+                            matchId: sala,
+                            requestId,
+                            estado: jogo.estado,
+                        });
+                    }
+
+                    logger.info('Evento de ação processado.', { requestId, userId, sala, matchId: sala, evento: nomeAcao });
+                } finally {
+                    registrarLatenciaEvento(nomeAcao, startedAt);
                 }
             });
         };
 
         socket.on('reconectar_partida', async ({ sala } = {}) => {
-            if (typeof sala !== 'string') {
-                payloadInvalido(socket, 'Payload inválido para reconectar_partida.');
-                return;
-            }
-
-            const jogo = jogosAtivos[sala];
-            if (!jogo) {
-                emitirErroPartida(socket, 'Partida não encontrada para reconexão.');
-                return;
-            }
-
+            const startedAt = process.hrtime.bigint();
+            const requestId = createRequestId();
             const userId = getSocketUid(socket);
-            if (!userId) {
-                emitirErroPartida(socket, 'Socket não autenticado para reconexão.');
-                return;
+
+            try {
+                if (typeof sala !== 'string') {
+                    payloadInvalido(socket, 'Payload inválido para reconectar_partida.', { requestId, userId, sala: null, matchId: null }, logger);
+                    return;
+                }
+
+                const jogo = jogosAtivos[sala];
+                if (!jogo) {
+                    emitirErroPartida(socket, 'Partida não encontrada para reconexão.', { requestId, userId, sala, matchId: sala }, logger);
+                    return;
+                }
+
+                if (!userId) {
+                    emitirErroPartida(socket, 'Socket não autenticado para reconexão.', { requestId, userId, sala, matchId: sala }, logger);
+                    return;
+                }
+
+                const jogador = jogo.jogadores?.[userId];
+                if (!jogador) {
+                    emitirErroPartida(socket, 'Jogador não pertence a esta partida.', { requestId, userId, sala, matchId: sala }, logger);
+                    return;
+                }
+
+                limparTimerReconexao(jogador);
+                jogador.socketId = socket.id;
+                jogador.conectado = true;
+                socket.join(sala);
+
+                await persistirPartidaAtiva(db, sala, jogo, { status: 'ativa', recuperavel: true });
+                io.to(sala).emit('estado_atualizado', {
+                    sala,
+                    matchId: sala,
+                    requestId,
+                    estado: jogo.estado,
+                });
+                logger.info('Jogador reconectado na partida.', { requestId, userId, sala, matchId: sala, socketId: socket.id });
+            } finally {
+                registrarLatenciaEvento('reconectar_partida', startedAt);
             }
-
-            const jogador = jogo.jogadores?.[userId];
-            if (!jogador) {
-                emitirErroPartida(socket, 'Jogador não pertence a esta partida.');
-                return;
-            }
-
-            limparTimerReconexao(jogador);
-            jogador.socketId = socket.id;
-            jogador.conectado = true;
-            socket.join(sala);
-
-            await persistirPartidaAtiva(db, sala, jogo, { status: 'ativa', recuperavel: true });
-            io.to(sala).emit('estado_atualizado', jogo.estado);
-            console.log(`[RECONEXÃO] Jogador ${userId} reconectado na sala ${sala} com socket ${socket.id}`);
         });
 
         criarManipuladorDeAcao('passar_turno', (estado, userId) => {
@@ -301,7 +410,7 @@ function gerenciarSockets(io, db) {
 
         criarManipuladorDeAcao('jogar_carta', (estado, userId, { cartaId }) => {
             if (typeof cartaId !== 'string') {
-                payloadInvalido(socket, 'cartaId inválido para jogar_carta.');
+                payloadInvalido(socket, 'cartaId inválido para jogar_carta.', { requestId: createRequestId(), userId, sala: null, matchId: null }, logger);
                 return;
             }
             jogarCarta(estado, userId, cartaId);
@@ -309,7 +418,7 @@ function gerenciarSockets(io, db) {
 
         criarManipuladorDeAcao('atacar_fortaleza', (estado, userId, { atacantesIds }) => {
             if (!Array.isArray(atacantesIds)) {
-                payloadInvalido(socket, 'atacantesIds inválido para atacar_fortaleza.');
+                payloadInvalido(socket, 'atacantesIds inválido para atacar_fortaleza.', { requestId: createRequestId(), userId, sala: null, matchId: null }, logger);
                 return;
             }
             atacarFortaleza(estado, userId, atacantesIds);
@@ -317,18 +426,21 @@ function gerenciarSockets(io, db) {
 
         criarManipuladorDeAcao('declarar_ataque', (estado, userId, { atacanteId, alvoId }) => {
             if (typeof atacanteId !== 'string' || typeof alvoId !== 'string') {
-                payloadInvalido(socket, 'atacanteId/alvoId inválido para declarar_ataque.');
+                payloadInvalido(socket, 'atacanteId/alvoId inválido para declarar_ataque.', { requestId: createRequestId(), userId, sala: null, matchId: null }, logger);
                 return;
             }
             declararAtaque(estado, userId, atacanteId, alvoId);
         });
 
         socket.on('disconnect', () => {
-            console.log(`[DESCONEXÃO] Jogador desconectado: ${socket.id}`);
+            const requestId = createRequestId();
+            metrics.conexoesAtivas = Math.max(metrics.conexoesAtivas - 1, 0);
+            logger.info('Jogador desconectado do socket.', { requestId, socketId: socket.id, conexoesAtivas: metrics.conexoesAtivas });
+
             if (filaDeEspera && filaDeEspera.socket.id === socket.id) {
-                console.log(`[FILA] O jogador ${filaDeEspera.userId} que estava na fila desconectou.`);
+                logger.info('Jogador removido da fila após desconexão.', { requestId, userId: filaDeEspera.userId, sala: null, matchId: null });
                 filaDeEspera = null;
-                console.log('[FILA] Fila foi limpa.');
+                updateQueueMetric();
             }
 
             const jogoEncontrado = buscarJogoPorSocketId(socket.id);
@@ -347,21 +459,28 @@ function gerenciarSockets(io, db) {
                 if (!jogadorAtual || jogadorAtual.conectado) return;
 
                 const oponenteId = Object.keys(jogoAtual.estado.jogadores).find((id) => id !== userId);
-                const payloadFim = { motivo: 'desconexao', jogadorDesconectado: userId };
+                const payloadFim = { motivo: 'desconexao', jogadorDesconectado: userId, requestId };
                 if (oponenteId) payloadFim.vencedor = oponenteId;
-                await encerrarPartida(io, db, sala, payloadFim);
+                await encerrarPartida(io, db, sala, payloadFim, logger);
             }, TEMPO_LIMITE_RECONEXAO_MS);
 
             persistirPartidaAtiva(db, sala, jogo, { status: 'recuperavel', recuperavel: true }).catch((error) => {
-                console.error(`[PERSISTÊNCIA] Falha ao atualizar status de reconexão da sala ${sala}:`, error);
+                logger.error('Falha ao atualizar status de reconexão da sala.', { requestId, sala, matchId: sala, userId, error });
             });
 
-            console.log(`[DESCONEXÃO] Jogador ${userId} desconectado da sala ${sala}. Aguardando reconexão por ${TEMPO_LIMITE_RECONEXAO_MS / 1000}s.`);
+            logger.info('Jogador desconectado da sala, aguardando reconexão.', {
+                requestId,
+                userId,
+                sala,
+                matchId: sala,
+                timeoutSegundos: TEMPO_LIMITE_RECONEXAO_MS / 1000,
+            });
         });
     });
 }
 
 gerenciarSockets.carregarPartidasRecuperaveis = carregarPartidasRecuperaveis;
 gerenciarSockets.iniciarLimpezaPeriodica = iniciarLimpezaPeriodica;
+gerenciarSockets.getMetrics = getMetrics;
 
 module.exports = gerenciarSockets;
