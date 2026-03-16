@@ -7,10 +7,14 @@ Este backend não expõe uma API REST tradicional. A comunicação acontece via 
 ## ✅ Evento: `buscar_partida`
 **Descrição:** Envia a intenção de encontrar um adversário e iniciar um jogo.
 
+### Pré-requisito de autenticação
+- O cliente deve conectar com `auth.token` no handshake do Socket.IO.
+- O token é validado pelo Firebase Admin SDK no middleware `io.use`.
+- O servidor identifica o jogador por `socket.user.uid` e não aceita `userId` no payload.
+
 ### Cliente → Servidor
 - **Evento:** `buscar_partida`
 - **Payload (objeto):**
-  - `userId` (string) - identificador do jogador.
   - `deckId` (string|number) - identificador do baralho que o jogador deseja usar.
 
 ### Servidor → Cliente (resposta)
@@ -63,12 +67,12 @@ Este backend não expõe uma API REST tradicional. A comunicação acontece via 
 ---
 
 ## ✅ Evento: `erro_partida`
-**Descrição:** Em caso de falha ao inicializar a partida (por exemplo, baralho faltando).
+**Descrição:** Em caso de falha de autenticação, payload inválido ou erro ao inicializar a partida.
 
 ### Servidor → Cliente
 - **Evento:** `erro_partida`
 - **Payload (objeto):**
-  - `mensagem` (string) - descrição do erro.
+  - `motivo` (string) - descrição clara do erro.
 
 ---
 
@@ -159,4 +163,12 @@ Socket.IO utiliza o handshake padrão via HTTP/WS. Em geral não há cabeçalhos
 - `Origin` (controlado pelo browser)
 - `Cookie` (se você usar autenticação baseada em sessão)
 
-Para autenticação customizada, você pode utilizar o campo `auth` no cliente Socket.IO (não implementado por padrão neste repositório).
+Autenticação é obrigatória neste backend usando `auth.token` (Firebase ID Token):
+
+```js
+const socket = io('http://localhost:3000', {
+  auth: { token: firebaseIdToken },
+});
+```
+
+Se o token for inválido/ausente, o servidor envia `erro_partida` com `motivo` e desconecta o socket.
