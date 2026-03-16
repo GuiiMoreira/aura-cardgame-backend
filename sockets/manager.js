@@ -8,6 +8,42 @@ let filaDeEspera = null;
 const TEMPO_LIMITE_RECONEXAO_MS = 60 * 1000;
 const TTL_PARTIDA_ABANDONADA_MS = 24 * 60 * 60 * 1000;
 
+function construirEstadoSimplificado(estado = {}) {
+  const jogadores = Object.fromEntries(
+    Object.entries(estado.jogadores || {}).map(([uid, jogador]) => [
+      uid,
+      {
+        vida: jogador?.vida ?? 0,
+        recursos: jogador?.recursos || {},
+        recursosMax: jogador?.recursosMax || {},
+        geracaoRecursos: jogador?.geracaoRecursos || {},
+        mao: (jogador?.mao || []).map((carta) => carta?.id).filter(Boolean),
+        baralhoRestante: Array.isArray(jogador?.baralho) ? jogador.baralho.length : 0,
+        cemiterio: (jogador?.cemiterio || []).map((carta) => carta?.id).filter(Boolean),
+      },
+    ])
+  );
+
+  const campo = Object.fromEntries(
+    Object.entries(estado.campo || {}).map(([uid, cartas]) => [
+      uid,
+      (cartas || []).map((carta) => ({
+        id: carta?.id || null,
+        forca: carta?.Força ?? 0,
+        vida: carta?.Vida ?? 0,
+        exaustao: Boolean(carta?.exaustao),
+      })),
+    ])
+  );
+
+  return {
+    turno: estado.turno || null,
+    fase: estado.fase || null,
+    jogadores,
+    campo,
+  };
+}
+
 const metrics = {
   conexoesAtivas: 0,
   matchmakingPendente: 0,
@@ -78,7 +114,8 @@ function calcularExpiracaoTTL() {
 function montarSnapshotPartida(sala, jogo, extras = {}) {
   return {
     sala,
-    estado: jogo.estado,
+    estado: construirEstadoSimplificado(jogo.estado),
+    estadoCompleto: jogo.estado,
     jogadores: Object.fromEntries(
       Object.entries(jogo.jogadores || {}).map(([uid, jogador]) => [
         uid,
@@ -186,7 +223,7 @@ async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
   snapshot.forEach((doc) => {
     const data = doc.data();
     const sala = data.sala || doc.id;
-    const estado = data.estado;
+    const estado = data.estadoCompleto || data.estado;
 
     if (!sala || !estado?.jogadores) {
       logger.warn('Documento inválido em partidas_ativas, ignorando recuperação.', {
@@ -236,17 +273,22 @@ async function carregarPartidasRecuperaveis(db, logger = baseLogger) {
 
 async function limparPartidasAbandonadas(db, logger = baseLogger) {
   const agora = new Date();
-  const snapshot = await db
-    .collection('partidas_ativas')
-    .where('expiresAt', '<=', agora)
-    .where('status', '==', 'recuperavel')
-    .get();
+  const snapshot = await db.collection('partidas_ativas').where('expiresAt', '<=', agora).get();
 
   if (snapshot.empty) return 0;
 
   const batch = db.batch();
-  snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+  snapshot.docs.forEach((doc) => {
+    const data = doc.data();
+    const sala = data?.sala || doc.id;
+    Object.keys(data?.estadoCompleto?.jogadores || data?.estado?.jogadores || {}).forEach((uid) => {
+      limparSalaAtivaDoJogador(uid, sala);
+    });
+    delete jogosAtivos[sala];
+    batch.delete(doc.ref);
+  });
   await batch.commit();
+  updateActiveMatchesMetric();
 
   logger.info('Partidas abandonadas removidas por TTL.', { quantidade: snapshot.size });
   return snapshot.size;
@@ -254,13 +296,17 @@ async function limparPartidasAbandonadas(db, logger = baseLogger) {
 
 function iniciarLimpezaPeriodica(db, logger = baseLogger) {
   const intervaloMs = 15 * 60 * 1000;
-  setInterval(async () => {
+  const timer = setInterval(async () => {
     try {
       await limparPartidasAbandonadas(db, logger);
     } catch (error) {
       logger.error('Falha na limpeza periódica de partidas abandonadas.', { error });
     }
   }, intervaloMs);
+
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
 }
 
 function gerenciarSockets(io, db, logger = baseLogger) {
@@ -642,5 +688,9 @@ function gerenciarSockets(io, db, logger = baseLogger) {
 gerenciarSockets.carregarPartidasRecuperaveis = carregarPartidasRecuperaveis;
 gerenciarSockets.iniciarLimpezaPeriodica = iniciarLimpezaPeriodica;
 gerenciarSockets.getMetrics = getMetrics;
+gerenciarSockets.__testables = {
+  construirEstadoSimplificado,
+  limparPartidasAbandonadas,
+};
 
 module.exports = gerenciarSockets;

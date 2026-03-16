@@ -210,7 +210,7 @@ async function criarAmbiente() {
 }
 
 test('integração socket: buscar_partida -> ações -> fim_de_jogo', async () => {
-  const { p1, p2, encerrar } = await criarAmbiente();
+  const { db, p1, p2, encerrar } = await criarAmbiente();
 
   try {
     p1.emit('buscar_partida', { deckId: 'deck_p1' });
@@ -239,6 +239,15 @@ test('integração socket: buscar_partida -> ações -> fim_de_jogo', async () =
 
     assert.equal(fim.vencedor, 'p1');
     assert.equal(fim.sala, sala);
+
+    const partidaAtiva = db.state.partidas_ativas[sala];
+    const partidaHistorico = db.state.partidas_historico[sala];
+    assert.equal(partidaAtiva, undefined);
+    assert.ok(partidaHistorico);
+    assert.equal(partidaHistorico.status, 'finalizada');
+    assert.equal(partidaHistorico.fim.vencedor, 'p1');
+    assert.ok(partidaHistorico.estado.turno);
+    assert.ok(partidaHistorico.estadoCompleto.jogadores.p1.mao);
   } finally {
     await encerrar();
   }
@@ -335,7 +344,6 @@ test('integração socket: desconexão e reconexão preservam partida ativa', as
   }
 });
 
-
 test('integração socket: reconexão sem sala usa vínculo uid -> sala ativa', async () => {
   const { p1, p2, encerrar, criarCliente } = await criarAmbiente();
 
@@ -372,7 +380,7 @@ test('integração socket: timeout de reconexão encerra partida por abandono', 
     return setTimeoutTemp(fn, ms, ...args);
   };
 
-  const { p1, p2, encerrar } = await criarAmbiente();
+  const { db, p1, p2, encerrar } = await criarAmbiente();
 
   try {
     p1.emit('buscar_partida', { deckId: 'deck_p1' });
@@ -388,8 +396,59 @@ test('integração socket: timeout de reconexão encerra partida por abandono', 
     assert.equal(fim.motivo, 'abandono');
     assert.equal(fim.vencedor, 'p2');
     assert.equal(fim.jogadorDesconectado, 'p1');
+
+    assert.equal(db.state.partidas_ativas[partida.sala], undefined);
+    assert.equal(db.state.partidas_historico[partida.sala].status, 'finalizada');
   } finally {
     global.setTimeout = setTimeoutTemp;
     await encerrar();
   }
+});
+
+test('integração socket: snapshot simplificado é salvo nas partidas ativas', async () => {
+  const { db, p1, p2, encerrar } = await criarAmbiente();
+
+  try {
+    p1.emit('buscar_partida', { deckId: 'deck_p1' });
+    p2.emit('buscar_partida', { deckId: 'deck_p2' });
+
+    const partida = await waitForEvent(p1, 'partida_encontrada');
+    await waitForEvent(p2, 'partida_encontrada');
+
+    const snapshotAtivo = db.state.partidas_ativas[partida.sala];
+    assert.ok(snapshotAtivo);
+    assert.equal(snapshotAtivo.sala, partida.sala);
+    assert.equal(snapshotAtivo.status, 'ativa');
+    assert.ok(snapshotAtivo.updatedAt instanceof Date);
+    assert.ok(snapshotAtivo.expiresAt instanceof Date);
+    assert.equal(typeof snapshotAtivo.estado.jogadores.p1.baralhoRestante, 'number');
+    assert.equal(Array.isArray(snapshotAtivo.estado.jogadores.p1.mao), true);
+    assert.equal(Array.isArray(snapshotAtivo.estadoCompleto.jogadores.p1.mao), true);
+  } finally {
+    await encerrar();
+  }
+});
+
+test('limpeza TTL remove partidas órfãs expiradas', async () => {
+  const db = criarDbFake();
+  const { limparPartidasAbandonadas } = gerenciarSockets.__testables;
+
+  db.state.partidas_ativas.sala_expirada = {
+    sala: 'sala_expirada',
+    status: 'recuperavel',
+    estado: { jogadores: { p1: { vida: 100 }, p2: { vida: 100 } } },
+    expiresAt: new Date(Date.now() - 1000),
+  };
+
+  db.state.partidas_ativas.sala_valida = {
+    sala: 'sala_valida',
+    status: 'recuperavel',
+    estado: { jogadores: { p1: { vida: 100 }, p2: { vida: 100 } } },
+    expiresAt: new Date(Date.now() + 60_000),
+  };
+
+  const removidas = await limparPartidasAbandonadas(db, noopLogger);
+  assert.equal(removidas, 1);
+  assert.equal(db.state.partidas_ativas.sala_expirada, undefined);
+  assert.ok(db.state.partidas_ativas.sala_valida);
 });
