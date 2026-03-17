@@ -1,5 +1,11 @@
 const { criarEstadoInicialDoJogo } = require('../game/logic');
-const { passarTurno, jogarCarta, atacarFortaleza, declararAtaque } = require('../game/actions');
+const {
+  passarTurno,
+  jogarCarta,
+  atacarFortaleza,
+  declararAtaque,
+  ativarHabilidadeDaCarta,
+} = require('../game/actions');
 const { InvalidPhaseActionError } = require('../game/turn-phases');
 const { createRequestId, logger: baseLogger } = require('../logger');
 
@@ -235,9 +241,7 @@ async function encerrarPartida(io, db, sala, payload, logger = baseLogger) {
 function buscarJogoPorSocketId(socketId) {
   return Object.entries(jogosAtivos).find(([sala, jogo]) => {
     const conexoesDaSala = conexoesPorSala[sala] || jogo.jogadores || {};
-    return Object.values(conexoesDaSala).some(
-      (metaJogador) => metaJogador.socketId === socketId
-    );
+    return Object.values(conexoesDaSala).some((metaJogador) => metaJogador.socketId === socketId);
   });
 }
 
@@ -451,13 +455,16 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         if (!filaDeEspera) {
           filaDeEspera = { socket, deckId, userId };
           updateQueueMetric();
-          socket.emit('status_matchmaking', withProtocol({
-            mensagem: 'Você está na fila, aguardando outro jogador...',
-            requestId,
-            userId,
-            sala: null,
-            matchId: null,
-          }));
+          socket.emit(
+            'status_matchmaking',
+            withProtocol({
+              mensagem: 'Você está na fila, aguardando outro jogador...',
+              requestId,
+              userId,
+              sala: null,
+              matchId: null,
+            })
+          );
           logger.info('Jogador inserido na fila de matchmaking.', {
             ...contexto,
             matchmakingPendente: metrics.matchmakingPendente,
@@ -509,12 +516,15 @@ function gerenciarSockets(io, db, logger = baseLogger) {
             status: 'ativa',
             recuperavel: true,
           });
-          io.to(nomeDaSala).emit('partida_encontrada', withProtocol({
-            sala: nomeDaSala,
-            matchId: nomeDaSala,
-            requestId,
-            estado: estadoInicial,
-          }));
+          io.to(nomeDaSala).emit(
+            'partida_encontrada',
+            withProtocol({
+              sala: nomeDaSala,
+              matchId: nomeDaSala,
+              requestId,
+              estado: estadoInicial,
+            })
+          );
           logger.info('Partida criada com sucesso.', {
             ...contextoMatch,
             partidasAtivas: metrics.partidasAtivas,
@@ -532,14 +542,17 @@ function gerenciarSockets(io, db, logger = baseLogger) {
             ],
             error,
           });
-          io.to(nomeDaSala).emit('erro_partida', withProtocol({
-            motivo,
-            codigo: error?.code || 'PARTIDA_INDISPONIVEL',
-            requestId,
-            sala: nomeDaSala,
-            matchId: nomeDaSala,
-            userId,
-          }));
+          io.to(nomeDaSala).emit(
+            'erro_partida',
+            withProtocol({
+              motivo,
+              codigo: error?.code || 'PARTIDA_INDISPONIVEL',
+              requestId,
+              sala: nomeDaSala,
+              matchId: nomeDaSala,
+              userId,
+            })
+          );
         }
       } finally {
         registrarLatenciaEvento('buscar_partida', startedAt);
@@ -611,12 +624,15 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           if (jogo.estado.jogadores[oponenteId].vida <= 0) {
             await encerrarPartida(io, db, sala, { vencedor: userId, requestId }, logger);
           } else {
-            io.to(sala).emit('estado_atualizado', withProtocol({
-              sala,
-              matchId: sala,
-              requestId,
-              estado: jogo.estado,
-            }));
+            io.to(sala).emit(
+              'estado_atualizado',
+              withProtocol({
+                sala,
+                matchId: sala,
+                requestId,
+                estado: jogo.estado,
+              })
+            );
           }
 
           logger.info('Evento de ação processado.', {
@@ -693,12 +709,15 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         socket.join(salaAlvo);
 
         await persistirPartidaAtiva(db, salaAlvo, jogo, { status: 'ativa', recuperavel: true });
-        io.to(salaAlvo).emit('estado_atualizado', withProtocol({
-          sala: salaAlvo,
-          matchId: salaAlvo,
-          requestId,
-          estado: jogo.estado,
-        }));
+        io.to(salaAlvo).emit(
+          'estado_atualizado',
+          withProtocol({
+            sala: salaAlvo,
+            matchId: salaAlvo,
+            requestId,
+            estado: jogo.estado,
+          })
+        );
         logger.info('Jogador reconectado na partida.', {
           requestId,
           userId,
@@ -757,6 +776,24 @@ function gerenciarSockets(io, db, logger = baseLogger) {
       return true;
     });
 
+    criarManipuladorDeAcao(
+      'ativar_habilidade_carta',
+      (estado, userId, { cartaId, habilidadeTipo }) => {
+        if (typeof cartaId !== 'string' || typeof habilidadeTipo !== 'string') {
+          payloadInvalido(
+            socket,
+            'cartaId/habilidadeTipo inválido para ativar_habilidade_carta.',
+            { requestId: createRequestId(), userId, sala: null, matchId: null },
+            logger
+          );
+          return false;
+        }
+
+        ativarHabilidadeDaCarta(estado, userId, cartaId, habilidadeTipo);
+        return true;
+      }
+    );
+
     socket.on('disconnect', () => {
       const requestId = createRequestId();
       metrics.conexoesAtivas = Math.max(metrics.conexoesAtivas - 1, 0);
@@ -795,7 +832,11 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         if (!jogadorAtual || jogadorAtual.conectado) return;
 
         const oponenteId = Object.keys(jogoAtual.estado.jogadores).find((id) => id !== userId);
-        const payloadFim = { motivo: 'abandono/desconexao', jogadorDesconectado: userId, requestId };
+        const payloadFim = {
+          motivo: 'abandono/desconexao',
+          jogadorDesconectado: userId,
+          requestId,
+        };
         if (oponenteId) payloadFim.vencedor = oponenteId;
         await encerrarPartida(io, db, sala, payloadFim, logger);
       }, TEMPO_LIMITE_RECONEXAO_MS);
