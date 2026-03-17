@@ -5,6 +5,45 @@ function getOponenteId(estado, userId) {
   return Object.keys(estado.jogadores).find((id) => id !== userId);
 }
 
+function aplicarEfeito(estado, effect) {
+  if (!effect || !effect.targetCard) {
+    return;
+  }
+
+  const efeito = {
+    tipo: effect.tipo ?? 'FISICO',
+    natureza: effect.natureza ?? 'DANO',
+    valor: Number.isFinite(Number(effect.valor)) ? Number(effect.valor) : 0,
+    sourceCard: effect.sourceCard,
+    targetCard: effect.targetCard,
+  };
+
+  if (efeito.valor <= 0) {
+    return;
+  }
+
+  runHookForCard(efeito.targetCard, 'beforeEffectResolve', {
+    estado,
+    userId: effect.targetOwnerId,
+    opponentId: effect.sourceOwnerId,
+    sourceCard: effect.sourceCard,
+    effect: efeito,
+  });
+
+  if (efeito.valor <= 0) {
+    return;
+  }
+
+  if (efeito.natureza === 'DANO') {
+    efeito.targetCard.Vida -= efeito.valor;
+    return;
+  }
+
+  if (efeito.natureza === 'CURA') {
+    efeito.targetCard.Vida += efeito.valor;
+  }
+}
+
 function passarTurno(estado, userId) {
   const proximaFase = getNextPhase(estado.fase);
   estado.fase = proximaFase;
@@ -179,6 +218,12 @@ function declararAtaque(estado, userId, atacanteId, alvoId) {
     userId,
     opponentId: oponenteId,
     targetCard: cartaAlvo,
+    applyEffect: (effect) =>
+      aplicarEfeito(estado, {
+        ...effect,
+        sourceOwnerId: userId,
+        targetOwnerId: effect.targetCard?.id === cartaAtacante.id ? userId : oponenteId,
+      }),
   });
 
   runHookForCard(cartaAlvo, 'beforeAttack', {
@@ -189,8 +234,24 @@ function declararAtaque(estado, userId, atacanteId, alvoId) {
   });
 
   if (cartaAtacante.Vida > 0 && cartaAlvo.Vida > 0) {
-    cartaAlvo.Vida -= cartaAtacante.Força;
-    cartaAtacante.Vida -= cartaAlvo.Força;
+    aplicarEfeito(estado, {
+      sourceCard: cartaAtacante,
+      targetCard: cartaAlvo,
+      sourceOwnerId: userId,
+      targetOwnerId: oponenteId,
+      tipo: 'FISICO',
+      natureza: 'DANO',
+      valor: cartaAtacante.Força,
+    });
+    aplicarEfeito(estado, {
+      sourceCard: cartaAlvo,
+      targetCard: cartaAtacante,
+      sourceOwnerId: oponenteId,
+      targetOwnerId: userId,
+      tipo: 'FISICO',
+      natureza: 'DANO',
+      valor: cartaAlvo.Força,
+    });
   }
 
   runHookForCard(cartaAtacante, 'afterAttack', {
@@ -221,4 +282,5 @@ module.exports = {
   atacarFortaleza,
   declararAtaque,
   ativarHabilidadeDaCarta,
+  aplicarEfeito,
 };

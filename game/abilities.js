@@ -1,13 +1,67 @@
-const HOOKS = ['onSummon', 'beforeAttack', 'afterAttack', 'onDeath', 'onTurnStart', 'onActivate'];
+const HOOKS = ['onSummon', 'beforeAttack', 'beforeEffectResolve', 'afterAttack', 'onDeath', 'onTurnStart', 'onActivate'];
 
 const abilityRegistry = {
   INSTAVEL: {
-    beforeAttack: ({ sourceCard, targetCard, ability }) => {
+    beforeAttack: ({ sourceCard, targetCard, ability, applyEffect }) => {
       const dano = ability.params.valor * 10;
       if (dano <= 0 || !sourceCard || !targetCard) return;
 
+      if (typeof applyEffect === 'function') {
+        applyEffect({
+          sourceCard,
+          targetCard: sourceCard,
+          tipo: 'MAGICO',
+          natureza: 'DANO',
+          valor: dano,
+        });
+        applyEffect({
+          sourceCard,
+          targetCard,
+          tipo: 'MAGICO',
+          natureza: 'DANO',
+          valor: dano,
+        });
+        return;
+      }
+
       sourceCard.Vida -= dano;
       targetCard.Vida -= dano;
+    },
+  },
+  ANTIMAGIA: {
+    onSummon: ({ sourceCard, ability }) => {
+      if (!sourceCard) return;
+
+      const valor = Math.max(0, Number(ability.params.valor) || 0);
+      sourceCard.antimagia = {
+        usosRestantes: valor,
+      };
+    },
+    onTurnStart: ({ sourceCard, ability }) => {
+      if (!sourceCard) return;
+
+      const valor = Math.max(0, Number(ability.params.valor) || 0);
+      sourceCard.antimagia = {
+        usosRestantes: valor,
+      };
+    },
+    beforeEffectResolve: ({ sourceCard, ability, effect }) => {
+      if (!sourceCard || !effect || effect.tipo !== 'MAGICO' || effect.valor <= 0) return;
+
+      const valor = Math.max(0, Number(ability.params.valor) || 0);
+      if (valor <= 0) return;
+
+      if (!sourceCard.antimagia || typeof sourceCard.antimagia.usosRestantes !== 'number') {
+        sourceCard.antimagia = { usosRestantes: valor };
+      }
+
+      if (sourceCard.antimagia.usosRestantes <= 0) {
+        return;
+      }
+
+      const reducao = valor * 10;
+      effect.valor = Math.max(0, effect.valor - reducao);
+      sourceCard.antimagia.usosRestantes -= 1;
     },
   },
   RECARREGAVEL: {
@@ -70,6 +124,8 @@ const ALIAS_BY_LABEL = {
   RECARREGAVEL: 'RECARREGAVEL',
   RECARREGÁVEL: 'RECARREGAVEL',
   ALQUIMIA: 'ALQUIMIA',
+  ANTIMAGIA: 'ANTIMAGIA',
+  'ANTI MAGIA': 'ANTIMAGIA',
 };
 
 function normalizeAbility(rawAbility, index = 0) {
