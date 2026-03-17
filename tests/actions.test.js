@@ -6,6 +6,7 @@ const {
   atacarFortaleza,
   jogarCarta,
   ativarHabilidadeDaCarta,
+  passarTurno,
 } = require('../game/actions');
 const { TURN_PHASES } = require('../game/turn-phases');
 
@@ -79,6 +80,101 @@ test('atacarFortaleza soma dano de atacantes válidos', () => {
 
   assert.equal(estado.jogadores.p2.vida, 85);
   assert.equal(estado.campo.p1[0].exaustao, true);
+});
+
+test('INSTAVEL também dispara ao atacar fortaleza', () => {
+  const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1.push({
+    id: 'instavel-1',
+    Força: 10,
+    Vida: 40,
+    exaustao: false,
+    habilidades: [{ tipo: 'INSTAVEL', valor: 1 }],
+  });
+
+  atacarFortaleza(estado, 'p1', ['instavel-1']);
+
+  assert.equal(estado.campo.p1[0].Vida, 30);
+  assert.equal(estado.jogadores.p2.vida, 80);
+});
+
+test('RECARREGAVEL impede novo ataque enquanto turnosRecarga > 0 e libera após turnos corretos', () => {
+  const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1.push({
+    id: 'canhoneiro',
+    Força: 20,
+    Vida: 50,
+    exaustao: false,
+    habilidades: [{ tipo: 'RECARREGAVEL', valor: 2 }],
+  });
+  estado.campo.p2.push({ id: 'def-1', Força: 5, Vida: 30, exaustao: false });
+
+  declararAtaque(estado, 'p1', 'canhoneiro', 'def-1');
+
+  assert.equal(estado.campo.p1[0].turnosRecarga, 2);
+
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1[0].exaustao = false;
+  declararAtaque(estado, 'p1', 'canhoneiro', 'def-1');
+
+  assert.equal(estado.campo.p2[0].Vida, 10);
+
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p1');
+  assert.equal(estado.campo.p2[0].turnosRecarga, undefined);
+
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p2');
+  assert.equal(estado.campo.p1[0].turnosRecarga, 1);
+
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p1');
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p2');
+  assert.equal(estado.campo.p1[0].turnosRecarga, 0);
+
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1[0].exaustao = false;
+  declararAtaque(estado, 'p1', 'canhoneiro', 'def-1');
+
+  assert.equal(estado.campo.p2.length, 0);
+});
+
+test('recarga e exaustão interagem: exaustão também bloqueia quando não há recarga', () => {
+  const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1.push({
+    id: 'canhoneiro-fort',
+    Força: 15,
+    Vida: 20,
+    exaustao: false,
+    habilidades: [{ tipo: 'RECARREGAVEL', valor: 1 }],
+  });
+
+  atacarFortaleza(estado, 'p1', ['canhoneiro-fort']);
+  assert.equal(estado.jogadores.p2.vida, 85);
+  assert.equal(estado.campo.p1[0].turnosRecarga, 1);
+
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1[0].exaustao = false;
+  atacarFortaleza(estado, 'p1', ['canhoneiro-fort']);
+  assert.equal(estado.jogadores.p2.vida, 85);
+
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p1');
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p2');
+  assert.equal(estado.campo.p1[0].turnosRecarga, 0);
+
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  atacarFortaleza(estado, 'p1', ['canhoneiro-fort']);
+  assert.equal(estado.jogadores.p2.vida, 70);
+
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  atacarFortaleza(estado, 'p1', ['canhoneiro-fort']);
+  assert.equal(estado.jogadores.p2.vida, 70);
 });
 
 test('jogarCarta consome recursos e coloca carta exausta no campo', () => {

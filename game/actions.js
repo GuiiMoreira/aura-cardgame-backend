@@ -110,6 +110,29 @@ function resolveDeaths(estado, ordemJogadores, context = {}) {
   }
 }
 
+function canCardAttack(carta) {
+  if (!carta) return false;
+  if (carta.exaustao) return false;
+  if (typeof carta.turnosRecarga === 'number' && carta.turnosRecarga > 0) return false;
+  return true;
+}
+
+function aplicarRecargaAoAtacar(carta) {
+  if (!carta) return;
+
+  const habilidadeRecarregavel = getAbilitiesFromCard(carta).find((habilidade) => habilidade.tipo === 'RECARREGAVEL');
+  if (!habilidadeRecarregavel) {
+    return;
+  }
+
+  const turnosRecarga = Number(habilidadeRecarregavel.params.valor);
+  if (!Number.isFinite(turnosRecarga) || turnosRecarga <= 0) {
+    return;
+  }
+
+  carta.turnosRecarga = turnosRecarga;
+}
+
 
 function resolveSacrificioAllies(estado, userId, cartaInvocada, opcoes = {}) {
   const habilidadeSacrificio = getAbilitiesFromCard(cartaInvocada).find((h) => h.tipo === 'SACRIFICIO');
@@ -255,15 +278,66 @@ function atacarFortaleza(estado, userId, atacantesIds) {
 
   atacantesIds.forEach((atacanteId) => {
     const cartaAtacante = estado.campo[userId].find((carta) => carta.id === atacanteId);
-    if (cartaAtacante && cartaAtacante.Força > 0 && !cartaAtacante.exaustao) {
-      danoTotal += cartaAtacante.Força;
-      cartaAtacante.exaustao = true;
+    if (!canCardAttack(cartaAtacante) || cartaAtacante.Força <= 0) {
+      return;
     }
+
+    const fortalezaAlvo = { id: `fortaleza-${oponenteId}`, Vida: oponente.vida };
+
+    runHookForCard(cartaAtacante, 'beforeAttack', {
+      estado,
+      userId,
+      opponentId: oponenteId,
+      targetCard: fortalezaAlvo,
+      applyEffect: (effect) => {
+        if (!effect || !effect.targetCard) {
+          return;
+        }
+
+        if (effect.targetCard.id === cartaAtacante.id) {
+          aplicarEfeito(estado, {
+            ...effect,
+            sourceOwnerId: userId,
+            targetOwnerId: userId,
+          });
+          return;
+        }
+
+        const valor = Number(effect.valor) || 0;
+        if (valor <= 0) {
+          return;
+        }
+
+        if ((effect.natureza ?? 'DANO') === 'CURA') {
+          oponente.vida += valor;
+        } else {
+          oponente.vida -= valor;
+        }
+      },
+    });
+
+    if (cartaAtacante.Vida <= 0) {
+      return;
+    }
+
+    danoTotal += cartaAtacante.Força;
+
+    runHookForCard(cartaAtacante, 'afterAttack', {
+      estado,
+      userId,
+      opponentId: oponenteId,
+      targetCard: fortalezaAlvo,
+    });
+
+    cartaAtacante.exaustao = true;
+    aplicarRecargaAoAtacar(cartaAtacante);
   });
 
   if (danoTotal > 0) {
     oponente.vida -= danoTotal;
   }
+
+  resolveDeaths(estado, [userId, oponenteId]);
 }
 
 function declararAtaque(estado, userId, atacanteId, alvoId) {
@@ -273,7 +347,7 @@ function declararAtaque(estado, userId, atacanteId, alvoId) {
   const cartaAtacante = estado.campo[userId].find((carta) => carta.id === atacanteId);
   const cartaAlvo = estado.campo[oponenteId].find((carta) => carta.id === alvoId);
 
-  if (!cartaAtacante || !cartaAlvo || cartaAtacante.exaustao) {
+  if (!canCardAttack(cartaAtacante) || !cartaAlvo) {
     return;
   }
 
@@ -333,6 +407,7 @@ function declararAtaque(estado, userId, atacanteId, alvoId) {
   });
 
   cartaAtacante.exaustao = true;
+  aplicarRecargaAoAtacar(cartaAtacante);
 
   resolveDeaths(estado, [userId, oponenteId], {
     atacanteId,
