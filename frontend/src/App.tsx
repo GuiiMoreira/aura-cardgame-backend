@@ -3,6 +3,7 @@ import { CollectionView } from './features/deck-builder/CollectionView';
 import { DeckBuilderView } from './features/deck-builder/DeckBuilderView';
 import { LobbyView } from './features/lobby/LobbyView';
 import { LoginView } from './features/login/LoginView';
+import { RegisterView } from './features/login/RegisterView';
 import { MatchmakingView } from './features/matchmaking/MatchmakingView';
 import { PartidaView } from './features/partida/PartidaView';
 import { ResultadoView } from './features/resultado/ResultadoView';
@@ -20,6 +21,8 @@ import {
   hasFirebaseConfig,
   loginAnonymously,
   loginWithEmailPassword,
+  logout,
+  registerWithEmailPassword,
   subscribeAuthState,
   type User,
 } from './services/firebaseAuth';
@@ -45,6 +48,7 @@ export default function App() {
   const [step, setStep] = useState<FlowStep>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState<string | undefined>(undefined);
 
@@ -147,7 +151,7 @@ export default function App() {
       },
       onEstadoAtualizado: (payload) => {
         setEvents((prev) => ({ ...prev, estadoAtualizado: payload }));
-        setMatch({ sala: payload.sala, estado: payload.estado });
+        setMatch((prev) => ({ ...prev, sala: payload.sala, estado: payload.estado }));
       },
       onFimDeJogo: (payload) => {
         setEvents((prev) => ({ ...prev, fimDeJogo: payload }));
@@ -161,6 +165,7 @@ export default function App() {
           setStep('deckbuilder');
           return;
         }
+
         if (payload.motivo.toLowerCase().includes('abandono')) {
           setConnection((prev) => ({ ...prev, abandonmentDefeat: true }));
           setStep('resultado');
@@ -178,6 +183,25 @@ export default function App() {
       await loginWithEmailPassword(email, password);
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : 'Falha ao autenticar com e-mail/senha.');
+    }
+  };
+
+  const handleRegister = async () => {
+    if (password.length < 6) {
+      setAuthError('A senha precisa ter ao menos 6 caracteres.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setAuthError('As senhas não conferem.');
+      return;
+    }
+
+    try {
+      setAuthError(undefined);
+      await registerWithEmailPassword(email, password);
+      setStep('login');
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Falha ao criar conta.');
     }
   };
 
@@ -230,6 +254,7 @@ export default function App() {
     if (!authUser) {
       throw new Error('Usuário não autenticado.');
     }
+
     await saveUserDeck(authUser.uid, id, cartas, name);
     const loadedDecks = await listUserDecks(authUser.uid);
     setDecks(loadedDecks);
@@ -267,6 +292,16 @@ export default function App() {
     setConnection((prev) => ({ ...prev, reconnecting: true }));
   };
 
+  const handleLogout = async () => {
+    socketRef.current?.disconnect();
+    setSession(null);
+    setMatch({});
+    setEvents({});
+    setConnection(INITIAL_CONNECTION);
+    await logout();
+    setStep('login');
+  };
+
   const handleBackToLobby = () => {
     setEvents({});
     setMatch({});
@@ -275,7 +310,7 @@ export default function App() {
   };
 
   return (
-    <main style={{ fontFamily: 'sans-serif', maxWidth: 980, margin: '0 auto' }}>
+    <main style={{ fontFamily: 'Inter, sans-serif', maxWidth: 1100, margin: '24px auto', padding: '0 16px' }}>
       <h1>Aura Cardgame Frontend</h1>
       <small>Contrato Socket {SOCKET_CONTRACT_VERSION}</small>
       <p>
@@ -301,7 +336,23 @@ export default function App() {
           onMockToggle={setMockMode}
           onEmailPasswordLogin={handleEmailPasswordLogin}
           onAnonymousLogin={handleAnonymousLogin}
+          onGoToRegister={() => setStep('cadastro')}
           onSubmit={() => void handleLogin()}
+        />
+      ) : null}
+
+      {step === 'cadastro' ? (
+        <RegisterView
+          email={email}
+          password={password}
+          confirmPassword={confirmPassword}
+          authError={authError}
+          canUseFirebaseAuth={hasFirebaseConfig}
+          onEmailChange={setEmail}
+          onPasswordChange={setPassword}
+          onConfirmPasswordChange={setConfirmPassword}
+          onRegister={() => void handleRegister()}
+          onBackToLogin={() => setStep('login')}
         />
       ) : null}
 
@@ -320,6 +371,7 @@ export default function App() {
             setSelectedDeckForBuilder(decks.find((deck) => deck.id === deckId));
             setStep('deckbuilder');
           }}
+          onLogout={() => void handleLogout()}
         />
       ) : null}
 
