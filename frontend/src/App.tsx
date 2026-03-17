@@ -133,6 +133,25 @@ export default function App() {
     socketRef.current?.passarTurno(match.sala);
   };
 
+  const handlePlayCard = (cartaId: string) => {
+    if (!match.sala) return;
+    socketRef.current?.jogarCarta(match.sala, cartaId);
+  };
+
+  const handleAttackFortress = (atacantesIds: string[]) => {
+    if (!match.sala) return;
+    socketRef.current?.atacarFortaleza(match.sala, atacantesIds);
+  };
+
+  const handleDeclareAttack = (atacanteId: string, alvoId: string) => {
+    if (!match.sala) return;
+    socketRef.current?.declararAtaque(match.sala, atacanteId, alvoId);
+  };
+
+  const handleAttackSelectionChange = (attackSelection: NonNullable<MatchState['attackSelection']>) => {
+    setMatch((prev) => ({ ...prev, attackSelection }));
+  };
+
   const handleTryReconnect = () => {
     socketRef.current?.reconectarPartida(match.sala);
     setConnection((prev) => ({ ...prev, reconnecting: true }));
@@ -179,10 +198,15 @@ export default function App() {
         <PartidaView
           sala={match.sala}
           estado={match.estado}
+          attackSelection={match.attackSelection}
           userId={session?.userId ?? userId}
           isReconnecting={connection.reconnecting}
           reconnectMessage={connection.reconnectingMessage}
           onPassTurn={handlePassTurn}
+          onPlayCard={handlePlayCard}
+          onAttackFortress={handleAttackFortress}
+          onDeclareAttack={handleDeclareAttack}
+          onAttackSelectionChange={handleAttackSelectionChange}
           onTryReconnect={handleTryReconnect}
         />
       ) : null}

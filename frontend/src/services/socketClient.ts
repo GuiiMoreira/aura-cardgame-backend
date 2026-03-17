@@ -74,6 +74,18 @@ export class SocketClientService {
     this.transport.emit('passar_turno', { sala });
   }
 
+  jogarCarta(sala: string, cartaId: string) {
+    this.transport.emit('jogar_carta', { sala, cartaId });
+  }
+
+  atacarFortaleza(sala: string, atacantesIds: string[]) {
+    this.transport.emit('atacar_fortaleza', { sala, atacantesIds });
+  }
+
+  declararAtaque(sala: string, atacanteId: string, alvoId: string) {
+    this.transport.emit('declarar_ataque', { sala, atacanteId, alvoId });
+  }
+
   reconectarPartida(sala?: string) {
     this.transport.emit('reconectar_partida', { sala });
   }

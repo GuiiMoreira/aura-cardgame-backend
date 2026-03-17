@@ -34,4 +34,9 @@ export type SessionState = {
 export type MatchState = {
   sala?: string;
   estado?: EstadoPartida;
+  attackSelection?: {
+    atacanteIds: string[];
+    atacanteId?: string;
+    alvoId?: string;
+  };
 };
