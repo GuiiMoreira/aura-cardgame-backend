@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { passarTurno, declararAtaque, jogarCarta } = require('../game/actions');
+const { passarTurno, declararAtaque, jogarCarta, ativarHabilidadeDaCarta } = require('../game/actions');
 const {
   abilityRegistry,
   getAbilitiesFromCard,
@@ -343,4 +343,95 @@ test('parser textual reconhece Antimagia (X)', () => {
       ['IMPACTO', 1],
     ]
   );
+});
+
+
+test('parser textual reconhece Resíduo Áurico (X)', () => {
+  const habilidades = parseTextualMechanics('Resíduo Áurico (1); Impacto (1)');
+
+  assert.deepEqual(
+    habilidades.map((h) => [h.tipo, h.params.valor]),
+    [
+      ['RESIDUO_AURICO', 1],
+      ['IMPACTO', 1],
+    ]
+  );
+});
+
+test('RESIDUO_AURICO acumula resíduos ao conjurar feitiço e converte em +10 de força a cada 3', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({
+    id: 'alquimista',
+    Força: 5,
+    Vida: 20,
+    exaustao: false,
+    habilidades: [{ tipo: 'RESIDUO_AURICO', valor: 0 }],
+  });
+  estado.campo.p1.push({
+    id: 'canalizador',
+    Força: 1,
+    Vida: 20,
+    exaustao: false,
+    habilidades: [{ tipo: 'ALQUIMIA', valor: 1 }],
+  });
+  estado.jogadores.p1.cemiterio = [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }];
+
+  ativarHabilidadeDaCarta(estado, 'p1', 'canalizador', 'ALQUIMIA');
+  assert.equal(estado.campo.p1[0].residuosAuricos, 1);
+  assert.equal(estado.campo.p1[0].Força, 5);
+
+  estado.jogadores.p1.cemiterio = [{ id: 'c4' }, { id: 'c5' }, { id: 'c6' }];
+  ativarHabilidadeDaCarta(estado, 'p1', 'canalizador', 'ALQUIMIA');
+  assert.equal(estado.campo.p1[0].residuosAuricos, 2);
+  assert.equal(estado.campo.p1[0].Força, 5);
+
+  estado.jogadores.p1.cemiterio = [{ id: 'c7' }, { id: 'c8' }, { id: 'c9' }];
+  ativarHabilidadeDaCarta(estado, 'p1', 'canalizador', 'ALQUIMIA');
+  assert.equal(estado.campo.p1[0].residuosAuricos, 0);
+  assert.equal(estado.campo.p1[0].Força, 15);
+});
+
+test('RESIDUO_AURICO aplica múltiplos limiares e persiste entre turnos', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({
+    id: 'alquimista',
+    Força: 5,
+    Vida: 20,
+    exaustao: false,
+    residuosAuricos: 2,
+    habilidades: [{ tipo: 'RESIDUO_AURICO', valor: 0 }],
+  });
+  estado.campo.p1.push({
+    id: 'canalizador',
+    Força: 1,
+    Vida: 20,
+    exaustao: false,
+    habilidades: [{ tipo: 'ALQUIMIA', valor: 1 }],
+  });
+
+  estado.jogadores.p1.cemiterio = [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }];
+  ativarHabilidadeDaCarta(estado, 'p1', 'canalizador', 'ALQUIMIA');
+  assert.equal(estado.campo.p1[0].residuosAuricos, 0);
+  assert.equal(estado.campo.p1[0].Força, 15);
+
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p2');
+  passarTurno(estado, 'p1');
+  passarTurno(estado, 'p2');
+  passarTurno(estado, 'p1');
+
+  assert.equal(estado.campo.p1[0].residuosAuricos, 0);
+  assert.equal(estado.campo.p1[0].Força, 15);
+
+  estado.jogadores.p1.cemiterio = [{ id: 'c4' }, { id: 'c5' }, { id: 'c6' }];
+  ativarHabilidadeDaCarta(estado, 'p1', 'canalizador', 'ALQUIMIA');
+  assert.equal(estado.campo.p1[0].residuosAuricos, 1);
+  assert.equal(estado.campo.p1[0].Força, 15);
+
+  estado.jogadores.p1.cemiterio = [{ id: 'c7' }, { id: 'c8' }, { id: 'c9' }, { id: 'c10' }, { id: 'c11' }, { id: 'c12' }];
+  ativarHabilidadeDaCarta(estado, 'p1', 'canalizador', 'ALQUIMIA');
+  ativarHabilidadeDaCarta(estado, 'p1', 'canalizador', 'ALQUIMIA');
+
+  assert.equal(estado.campo.p1[0].residuosAuricos, 0);
+  assert.equal(estado.campo.p1[0].Força, 25);
 });
