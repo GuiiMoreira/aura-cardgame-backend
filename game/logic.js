@@ -1,6 +1,7 @@
 const admin = require('firebase-admin');
 
 const { normalizeCardAbilities } = require('./abilities');
+const { TURN_PHASES } = require('./turn-phases');
 
 const REGRAS_DECK = {
   TAMANHO_MINIMO: 30,
@@ -174,7 +175,7 @@ async function criarEstadoInicialDoJogo(db, userId1, deckId1, userId2, deckId2) 
       },
     },
     turno: userId1,
-    fase: 'Manifestação',
+    fase: TURN_PHASES.MANIFESTACAO,
     campo: { [userId1]: [], [userId2]: [] },
   };
 }

@@ -1,5 +1,6 @@
 const { criarEstadoInicialDoJogo } = require('../game/logic');
 const { passarTurno, jogarCarta, atacarFortaleza, declararAtaque } = require('../game/actions');
+const { InvalidPhaseActionError } = require('../game/turn-phases');
 const { createRequestId, logger: baseLogger } = require('../logger');
 
 const CURRENT_PROTOCOL_VERSION = '1.1.0';
@@ -577,7 +578,31 @@ function gerenciarSockets(io, db, logger = baseLogger) {
           )
             return;
 
-          const acaoValida = logicaAcao(jogo.estado, userId, payload);
+          let acaoValida;
+          try {
+            acaoValida = logicaAcao(jogo.estado, userId, payload);
+          } catch (error) {
+            if (error instanceof InvalidPhaseActionError) {
+              emitirErroPartida(
+                socket,
+                error.message,
+                {
+                  requestId,
+                  userId,
+                  sala,
+                  matchId: sala,
+                  codigo: error.code,
+                  acao: error.actionName,
+                  faseAtual: error.faseAtual,
+                  fasesPermitidas: error.fasesPermitidas,
+                },
+                logger
+              );
+              return;
+            }
+
+            throw error;
+          }
           if (acaoValida === false) return;
 
           await persistirPartidaAtiva(db, sala, jogo, { status: 'ativa', recuperavel: true });
