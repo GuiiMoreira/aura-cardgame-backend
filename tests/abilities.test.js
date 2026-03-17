@@ -207,6 +207,51 @@ test('parser textual converte mecânica com fallback e ignora tokens inválidos'
   );
 });
 
+
+test('parser textual aceita formato sem parênteses para valor', () => {
+  const habilidades = parseTextualMechanics('Alquimia 4; Impacto 1');
+
+  assert.deepEqual(
+    habilidades.map((h) => [h.tipo, h.params.valor]),
+    [
+      ['ALQUIMIA', 4],
+      ['IMPACTO', 1],
+    ]
+  );
+});
+
+test('parser textual normaliza acentos e espaçamento do nome da mecânica', () => {
+  const habilidades = parseTextualMechanics('  recarregavel   ;   Sacrificio (2) ');
+
+  assert.deepEqual(
+    habilidades.map((h) => [h.tipo, h.params.valor]),
+    [
+      ['RECARREGAVEL', 0],
+      ['SACRIFICIO', 2],
+    ]
+  );
+});
+
+test('parser textual registra warning para mecânicas desconhecidas e tokens inválidos', () => {
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (message) => warnings.push(message);
+
+  try {
+    const habilidades = parseTextualMechanics('Mecânica X; ???; Recarregável');
+
+    assert.deepEqual(
+      habilidades.map((h) => [h.tipo, h.params.valor]),
+      [['RECARREGAVEL', 0]]
+    );
+    assert.equal(warnings.length, 2);
+    assert.match(warnings[0], /Mecânica desconhecida ignorada/);
+    assert.match(warnings[1], /Mecânica textual inválida ignorada/);
+  } finally {
+    console.warn = originalWarn;
+  }
+});
+
 test('SACRIFICIO ativa no onSummon e pode enviar a própria carta ao cemitério via resolveDeaths', () => {
   const estado = criarEstadoBase();
   estado.jogadores.p1.mao.push({
