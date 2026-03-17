@@ -1,4 +1,13 @@
-const HOOKS = ['onSummon', 'beforeAttack', 'beforeEffectResolve', 'afterAttack', 'onDeath', 'onTurnStart', 'onActivate'];
+const HOOKS = [
+  'onSummon',
+  'beforeAttack',
+  'beforeEffectResolve',
+  'afterAttack',
+  'onDeath',
+  'onTurnStart',
+  'onActivate',
+  'onSpellCast',
+];
 
 const abilityRegistry = {
   INSTAVEL: {
@@ -111,6 +120,27 @@ const abilityRegistry = {
       estado.jogadores[userId].vida += cura;
     },
   },
+  RESIDUO_AURICO: {
+    onSummon: ({ sourceCard }) => {
+      if (!sourceCard) return;
+      if (!Number.isFinite(sourceCard.residuosAuricos)) {
+        sourceCard.residuosAuricos = 0;
+      }
+    },
+    onSpellCast: ({ sourceCard }) => {
+      if (!sourceCard) return;
+
+      const residuosAtuais = Number.isFinite(sourceCard.residuosAuricos) ? sourceCard.residuosAuricos : 0;
+      const residuosAcumulados = residuosAtuais + 1;
+      const conversoes = Math.floor(residuosAcumulados / 3);
+
+      sourceCard.residuosAuricos = residuosAcumulados % 3;
+
+      if (conversoes > 0) {
+        sourceCard.Força += conversoes * 10;
+      }
+    },
+  },
 };
 
 const ALIAS_BY_LABEL = {
@@ -126,6 +156,8 @@ const ALIAS_BY_LABEL = {
   ALQUIMIA: 'ALQUIMIA',
   ANTIMAGIA: 'ANTIMAGIA',
   'ANTI MAGIA': 'ANTIMAGIA',
+  RESIDUO_AURICO: 'RESIDUO_AURICO',
+  'RESÍDUO ÁURICO': 'RESIDUO_AURICO',
 };
 
 function normalizeAbility(rawAbility, index = 0) {

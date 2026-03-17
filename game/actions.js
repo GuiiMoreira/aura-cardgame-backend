@@ -146,6 +146,23 @@ function jogarCarta(estado, userId, cartaId) {
   resolveDeaths(estado, [userId, getOponenteId(estado, userId)]);
 }
 
+
+function dispararConjuracaoFeitico(estado, userId, contexto = {}) {
+  const cartasDoCampo = estado?.campo?.[userId];
+  if (!Array.isArray(cartasDoCampo)) {
+    return;
+  }
+
+  cartasDoCampo.forEach((carta) => {
+    runHookForCard(carta, 'onSpellCast', {
+      estado,
+      userId,
+      opponentId: getOponenteId(estado, userId),
+      ...contexto,
+    });
+  });
+}
+
 function ativarHabilidadeDaCarta(estado, userId, cartaId, habilidadeTipo) {
   const jogador = estado.jogadores[userId];
   const carta = estado.campo[userId].find((item) => item.id === cartaId);
@@ -176,6 +193,11 @@ function ativarHabilidadeDaCarta(estado, userId, cartaId, habilidadeTipo) {
     estado,
     userId,
     opponentId: getOponenteId(estado, userId),
+  });
+
+  dispararConjuracaoFeitico(estado, userId, {
+    sourceCard: carta,
+    spellAbilityType: tipoNormalizado,
   });
 
   resolveDeaths(estado, [userId, getOponenteId(estado, userId)]);
