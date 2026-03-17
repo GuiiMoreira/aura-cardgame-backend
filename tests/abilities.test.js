@@ -260,3 +260,87 @@ test('parser textual reconhece ALQUIMIA (X)', () => {
     ]
   );
 });
+
+
+test('ANTIMAGIA reduz dano mágico e consome usos por turno', () => {
+  const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1.push({
+    id: 'mago-instavel',
+    Força: 10,
+    Vida: 40,
+    exaustao: false,
+    habilidades: [{ tipo: 'INSTAVEL', valor: 2 }],
+  });
+  estado.campo.p2.push({
+    id: 'guardiao-antimagia',
+    Força: 10,
+    Vida: 60,
+    exaustao: false,
+    habilidades: [{ tipo: 'ANTIMAGIA', valor: 1 }],
+  });
+
+  declararAtaque(estado, 'p1', 'mago-instavel', 'guardiao-antimagia');
+
+  assert.equal(estado.campo.p2[0].Vida, 40);
+  assert.equal(estado.campo.p1[0].Vida, 10);
+  assert.equal(estado.campo.p2[0].antimagia.usosRestantes, 0);
+});
+
+test('ANTIMAGIA valor 3 bloqueia 3 efeitos mágicos e permite dano no 4º', () => {
+  const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p1.push({
+    id: 'mago-instavel',
+    Força: 0,
+    Vida: 100,
+    exaustao: false,
+    habilidades: [{ tipo: 'INSTAVEL', valor: 1 }],
+  });
+  estado.campo.p2.push({
+    id: 'bastiao-antimagia',
+    Força: 0,
+    Vida: 100,
+    exaustao: false,
+    habilidades: [{ tipo: 'ANTIMAGIA', valor: 3 }],
+  });
+
+  for (let i = 0; i < 4; i += 1) {
+    estado.campo.p1[0].exaustao = false;
+    declararAtaque(estado, 'p1', 'mago-instavel', 'bastiao-antimagia');
+  }
+
+  assert.equal(estado.campo.p2[0].Vida, 90);
+  assert.equal(estado.campo.p2[0].antimagia.usosRestantes, 0);
+});
+
+
+test('ANTIMAGIA restaura usos no início do turno conforme valor', () => {
+  const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
+  estado.campo.p2.push({
+    id: 'sentinela',
+    Força: 2,
+    Vida: 30,
+    exaustao: true,
+    habilidades: [{ tipo: 'ANTIMAGIA', valor: 1 }],
+    antimagia: { usosRestantes: 0 },
+  });
+
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
+  passarTurno(estado, 'p1');
+
+  assert.equal(estado.turno, 'p2');
+  assert.equal(estado.campo.p2[0].antimagia.usosRestantes, 1);
+});
+test('parser textual reconhece Antimagia (X)', () => {
+  const habilidades = parseTextualMechanics('Antimagia (3); Impacto (1)');
+
+  assert.deepEqual(
+    habilidades.map((h) => [h.tipo, h.params.valor]),
+    [
+      ['ANTIMAGIA', 3],
+      ['IMPACTO', 1],
+    ]
+  );
+});
