@@ -172,3 +172,51 @@ test('ativarHabilidadeDaCarta falha sem cemitério suficiente e não aplica efei
     ['m1', 'm2']
   );
 });
+
+
+test('jogarCarta com Sacrifício (2) exige alvo aliado e envia ambos ao cemitério', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({ id: 'aliado-1', Força: 2, Vida: 10, exaustao: false });
+  estado.jogadores.p1.mao.push({
+    id: 'fanatico-2',
+    C: 0,
+    M: 0,
+    O: 0,
+    A: 0,
+    Força: 5,
+    Vida: 8,
+    Mecânica: 'Sacrifício (2)',
+    DescricaoMecanica: 'Sacrifique a si e um aliado.',
+  });
+
+  jogarCarta(estado, 'p1', 'fanatico-2', { sacrificeAllyId: 'aliado-1' });
+
+  assert.equal(estado.campo.p1.length, 0);
+  assert.deepEqual(
+    estado.jogadores.p1.cemiterio.map((c) => c.id),
+    ['aliado-1', 'fanatico-2']
+  );
+});
+
+test('jogarCarta com Sacrifício (3) falha sem aliados suficientes informados', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({ id: 'aliado-1', Força: 2, Vida: 10, exaustao: false });
+  estado.jogadores.p1.mao.push({
+    id: 'fanatico-3',
+    C: 1,
+    M: 0,
+    O: 0,
+    A: 0,
+    Força: 5,
+    Vida: 8,
+    Mecânica: 'Sacrifício (3)',
+    DescricaoMecanica: 'Sacrifique a si e mais dois aliados.',
+  });
+
+  jogarCarta(estado, 'p1', 'fanatico-3', { sacrificeAllyIds: ['aliado-1'] });
+
+  assert.equal(estado.campo.p1.length, 1);
+  assert.equal(estado.jogadores.p1.mao.length, 1);
+  assert.equal(estado.jogadores.p1.recursos.C, 20);
+  assert.deepEqual(estado.jogadores.p1.cemiterio, []);
+});

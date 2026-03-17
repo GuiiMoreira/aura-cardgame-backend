@@ -1,4 +1,4 @@
-const { runHookForCard, getAbilitiesFromCard } = require('./abilities');
+const { runHookForCard, getAbilitiesFromCard, getSacrificioSpec } = require('./abilities');
 const { TURN_PHASES, getNextPhase, assertActionAllowedInPhase } = require('./turn-phases');
 
 function getOponenteId(estado, userId) {
@@ -110,7 +110,37 @@ function resolveDeaths(estado, ordemJogadores, context = {}) {
   }
 }
 
-function jogarCarta(estado, userId, cartaId) {
+
+function resolveSacrificioAllies(estado, userId, cartaInvocada, opcoes = {}) {
+  const habilidadeSacrificio = getAbilitiesFromCard(cartaInvocada).find((h) => h.tipo === 'SACRIFICIO');
+  if (!habilidadeSacrificio) {
+    return { ok: true, allies: [] };
+  }
+
+  const { aliadosNecessarios } = getSacrificioSpec(cartaInvocada, habilidadeSacrificio);
+  if (aliadosNecessarios <= 0) {
+    return { ok: true, allies: [] };
+  }
+
+  const candidatos = estado.campo[userId].filter((carta) => carta.id !== cartaInvocada.id);
+  const alvoIds = Array.isArray(opcoes.sacrificeAllyIds)
+    ? opcoes.sacrificeAllyIds
+    : [opcoes.sacrificeAllyId].filter((id) => typeof id === 'string');
+
+  const aliados = alvoIds
+    .map((id) => candidatos.find((carta) => carta.id === id))
+    .filter(Boolean)
+    .filter((carta, index, arr) => arr.findIndex((item) => item.id === carta.id) === index)
+    .slice(0, aliadosNecessarios);
+
+  if (aliados.length < aliadosNecessarios) {
+    return { ok: false, allies: [] };
+  }
+
+  return { ok: true, allies: aliados };
+}
+
+function jogarCarta(estado, userId, cartaId, opcoes = {}) {
   assertActionAllowedInPhase(estado, 'jogar_carta', [TURN_PHASES.MANIFESTACAO]);
 
   const jogador = estado.jogadores[userId];
@@ -137,10 +167,22 @@ function jogarCarta(estado, userId, cartaId) {
   carta.exaustao = true;
   estado.campo[userId].push(carta);
 
+  const sacrificioAllies = resolveSacrificioAllies(estado, userId, carta, opcoes);
+  if (!sacrificioAllies.ok) {
+    estado.campo[userId].pop();
+    jogador.mao.splice(idx, 0, carta);
+    jogador.recursos.C += carta.C;
+    jogador.recursos.M += carta.M;
+    jogador.recursos.O += carta.O;
+    jogador.recursos.A += carta.A;
+    return;
+  }
+
   runHookForCard(carta, 'onSummon', {
     estado,
     userId,
     opponentId: getOponenteId(estado, userId),
+    sacrificeAllyCards: sacrificioAllies.allies,
   });
 
   resolveDeaths(estado, [userId, getOponenteId(estado, userId)]);

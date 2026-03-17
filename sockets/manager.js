@@ -734,7 +734,9 @@ function gerenciarSockets(io, db, logger = baseLogger) {
       passarTurno(estado, userId);
     });
 
-    criarManipuladorDeAcao('jogar_carta', (estado, userId, { cartaId }) => {
+    criarManipuladorDeAcao('jogar_carta', (estado, userId, payload = {}) => {
+      const { cartaId, sacrificeAllyId, sacrificeAllyIds } = payload;
+
       if (typeof cartaId !== 'string') {
         payloadInvalido(
           socket,
@@ -744,7 +746,34 @@ function gerenciarSockets(io, db, logger = baseLogger) {
         );
         return false;
       }
-      jogarCarta(estado, userId, cartaId);
+
+      if (
+        typeof sacrificeAllyId !== 'undefined' &&
+        typeof sacrificeAllyId !== 'string'
+      ) {
+        payloadInvalido(
+          socket,
+          'sacrificeAllyId inválido para jogar_carta.',
+          { requestId: createRequestId(), userId, sala: null, matchId: null },
+          logger
+        );
+        return false;
+      }
+
+      if (
+        typeof sacrificeAllyIds !== 'undefined' &&
+        (!Array.isArray(sacrificeAllyIds) || sacrificeAllyIds.some((id) => typeof id !== 'string'))
+      ) {
+        payloadInvalido(
+          socket,
+          'sacrificeAllyIds inválido para jogar_carta.',
+          { requestId: createRequestId(), userId, sala: null, matchId: null },
+          logger
+        );
+        return false;
+      }
+
+      jogarCarta(estado, userId, cartaId, { sacrificeAllyId, sacrificeAllyIds });
       return true;
     });
 

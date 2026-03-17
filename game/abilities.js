@@ -9,6 +9,36 @@ const HOOKS = [
   'onSpellCast',
 ];
 
+
+function normalizeText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase();
+}
+
+function getSacrificioSpec(card = {}, ability = {}) {
+  const descricao = normalizeText(card.DescricaoMecanica ?? card.descricaoMecanica);
+  const valor = Math.max(0, Number(ability?.params?.valor) || 0);
+
+  if (descricao.includes('si e mais dois ali')) {
+    return { totalSacrificios: 3, aliadosNecessarios: 2 };
+  }
+
+  if (descricao.includes('si e um aliado')) {
+    return { totalSacrificios: 2, aliadosNecessarios: 1 };
+  }
+
+  if (descricao.includes('sacrifique-se') || descricao.includes('sacrifique o invocador')) {
+    return { totalSacrificios: 1, aliadosNecessarios: 0 };
+  }
+
+  return {
+    totalSacrificios: valor > 0 ? valor : 1,
+    aliadosNecessarios: 0,
+  };
+}
+
 const abilityRegistry = {
   INSTAVEL: {
     beforeAttack: ({ sourceCard, targetCard, ability, applyEffect }) => {
@@ -89,11 +119,21 @@ const abilityRegistry = {
     },
   },
   SACRIFICIO: {
-    onSummon: ({ sourceCard, ability }) => {
-      const perdaVida = ability.params.valor;
-      if (perdaVida <= 0 || !sourceCard) return;
+    onSummon: ({ sourceCard, ability, sacrificeAllyCards }) => {
+      if (!sourceCard) return;
 
-      sourceCard.Vida -= perdaVida;
+      const { aliadosNecessarios } = getSacrificioSpec(sourceCard, ability);
+      sourceCard.Vida = 0;
+
+      if (aliadosNecessarios <= 0 || !Array.isArray(sacrificeAllyCards)) {
+        return;
+      }
+
+      sacrificeAllyCards.slice(0, aliadosNecessarios).forEach((allyCard) => {
+        if (allyCard) {
+          allyCard.Vida = 0;
+        }
+      });
     },
   },
   ULTIMO_SUSPIRO: {
@@ -280,4 +320,5 @@ module.exports = {
   getAbilitiesFromCard,
   normalizeCardAbilities,
   runHookForCard,
+  getSacrificioSpec,
 };
