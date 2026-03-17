@@ -7,7 +7,7 @@ import type {
   StatusMatchmakingPayload,
 } from '../contracts/socket-contracts';
 
-export type FlowStep = 'login' | 'lobby' | 'matchmaking' | 'partida' | 'resultado';
+export type FlowStep = 'login' | 'lobby' | 'colecao' | 'deckbuilder' | 'matchmaking' | 'partida' | 'resultado';
 
 export type ConnectionState = {
   connected: boolean;
