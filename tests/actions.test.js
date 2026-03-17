@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { declararAtaque, atacarFortaleza, jogarCarta } = require('../game/actions');
+const { TURN_PHASES } = require('../game/turn-phases');
 
 function criarEstadoBase() {
   return {
@@ -26,12 +27,14 @@ function criarEstadoBase() {
       },
     },
     turno: 'p1',
+    fase: TURN_PHASES.MANIFESTACAO,
     campo: { p1: [], p2: [] },
   };
 }
 
 test('declararAtaque aplica contragolpe da força do alvo (bugfix)', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
   estado.campo.p1.push({ id: 'a1', Força: 30, Vida: 50, exaustao: false });
   estado.campo.p2.push({ id: 'd1', Força: 10, Vida: 40, exaustao: false });
 
@@ -44,6 +47,7 @@ test('declararAtaque aplica contragolpe da força do alvo (bugfix)', () => {
 
 test('declararAtaque com INSTAVEL usa estrutura normalizada de habilidades', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
   estado.campo.p1.push({
     id: 'a1',
     Força: 20,
@@ -62,6 +66,7 @@ test('declararAtaque com INSTAVEL usa estrutura normalizada de habilidades', () 
 
 test('atacarFortaleza soma dano de atacantes válidos', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
   estado.campo.p1.push({ id: 'a1', Força: 15, Vida: 20, exaustao: false });
   estado.campo.p1.push({ id: 'a2', Força: 25, Vida: 20, exaustao: true });
 
@@ -82,4 +87,16 @@ test('jogarCarta consome recursos e coloca carta exausta no campo', () => {
   assert.equal(estado.jogadores.p1.mao.length, 0);
   assert.equal(estado.campo.p1.length, 1);
   assert.equal(estado.campo.p1[0].exaustao, true);
+});
+
+
+test('jogarCarta falha em fase inválida sem mutar estado', () => {
+  const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.REVELACAO;
+  estado.jogadores.p1.mao.push({ id: 'c1', C: 1, M: 0, O: 0, A: 0, Força: 10, Vida: 10 });
+
+  assert.throws(() => jogarCarta(estado, 'p1', 'c1'), { code: 'ACAO_FASE_INVALIDA' });
+
+  assert.equal(estado.jogadores.p1.mao.length, 1);
+  assert.equal(estado.campo.p1.length, 0);
 });

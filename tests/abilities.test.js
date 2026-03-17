@@ -8,6 +8,7 @@ const {
   parseTextualMechanics,
   normalizeCardAbilities,
 } = require('../game/abilities');
+const { TURN_PHASES } = require('../game/turn-phases');
 
 function criarEstadoBase() {
   return {
@@ -32,6 +33,7 @@ function criarEstadoBase() {
       },
     },
     turno: 'p1',
+    fase: TURN_PHASES.MANIFESTACAO,
     campo: { p1: [], p2: [] },
   };
 }
@@ -56,6 +58,7 @@ test('IMPACTO ativa no onSummon ao jogar carta', () => {
 
 test('INSTAVEL ativa no beforeAttack', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
   estado.campo.p1.push({
     id: 'atk',
     Força: 15,
@@ -73,6 +76,7 @@ test('INSTAVEL ativa no beforeAttack', () => {
 
 test('ULTIMO_SUSPIRO ativa no onDeath com ordem de resolução previsível', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
   estado.campo.p1.push({
     id: 'atk',
     Força: 30,
@@ -96,8 +100,9 @@ test('ULTIMO_SUSPIRO ativa no onDeath com ordem de resolução previsível', () 
   assert.deepEqual(estado.jogadores.p2.cemiterio.map((c) => c.id), ['def']);
 });
 
-test('REGENERACAO ativa no onTurnStart durante passarTurno', () => {
+test('REGENERACAO ativa ao iniciar próximo turno após ciclo de fases', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
   estado.campo.p2.push({
     id: 'guardiao',
     Força: 5,
@@ -108,13 +113,15 @@ test('REGENERACAO ativa no onTurnStart durante passarTurno', () => {
 
   passarTurno(estado, 'p1');
 
+  assert.equal(estado.fase, TURN_PHASES.RITUAL_DE_GERACAO);
   assert.equal(estado.turno, 'p2');
   assert.equal(estado.campo.p2[0].exaustao, false);
   assert.equal(estado.campo.p2[0].Vida, 13);
 });
 
-test('RECARREGAVEL reduz turnosRecarga no onTurnStart', () => {
+test('RECARREGAVEL reduz turnosRecarga no início do próximo turno', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.SILENCIO_FINAL;
   estado.campo.p2.push({
     id: 'canhoneiro',
     Força: 5,
@@ -131,6 +138,7 @@ test('RECARREGAVEL reduz turnosRecarga no onTurnStart', () => {
 
 test('afterAttack é integrado em declararAtaque', () => {
   const estado = criarEstadoBase();
+  estado.fase = TURN_PHASES.GUERRA_DOS_VEUS;
   const marcador = [];
   abilityRegistry.TESTE_AFTER = {
     afterAttack: ({ sourceCard }) => {

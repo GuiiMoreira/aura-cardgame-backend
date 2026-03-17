@@ -1,10 +1,22 @@
 const { runHookForCard } = require('./abilities');
+const {
+  TURN_PHASES,
+  getNextPhase,
+  assertActionAllowedInPhase,
+} = require('./turn-phases');
 
 function getOponenteId(estado, userId) {
   return Object.keys(estado.jogadores).find((id) => id !== userId);
 }
 
 function passarTurno(estado, userId) {
+  const proximaFase = getNextPhase(estado.fase);
+  estado.fase = proximaFase;
+
+  if (proximaFase !== TURN_PHASES.RITUAL_DE_GERACAO) {
+    return;
+  }
+
   const proximoJogadorId = getOponenteId(estado, userId);
   const jogadorDoTurno = estado.jogadores[proximoJogadorId];
 
@@ -64,6 +76,8 @@ function resolveDeaths(estado, ordemJogadores, context = {}) {
 }
 
 function jogarCarta(estado, userId, cartaId) {
+  assertActionAllowedInPhase(estado, 'jogar_carta', [TURN_PHASES.MANIFESTACAO]);
+
   const jogador = estado.jogadores[userId];
   const idx = jogador.mao.findIndex((carta) => carta.id === cartaId);
 
@@ -98,6 +112,8 @@ function jogarCarta(estado, userId, cartaId) {
 }
 
 function atacarFortaleza(estado, userId, atacantesIds) {
+  assertActionAllowedInPhase(estado, 'atacar_fortaleza', [TURN_PHASES.GUERRA_DOS_VEUS]);
+
   const oponenteId = getOponenteId(estado, userId);
   const oponente = estado.jogadores[oponenteId];
   let danoTotal = 0;
@@ -116,6 +132,8 @@ function atacarFortaleza(estado, userId, atacantesIds) {
 }
 
 function declararAtaque(estado, userId, atacanteId, alvoId) {
+  assertActionAllowedInPhase(estado, 'declarar_ataque', [TURN_PHASES.GUERRA_DOS_VEUS]);
+
   const oponenteId = getOponenteId(estado, userId);
   const cartaAtacante = estado.campo[userId].find((carta) => carta.id === atacanteId);
   const cartaAlvo = estado.campo[oponenteId].find((carta) => carta.id === alvoId);

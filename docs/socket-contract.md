@@ -38,6 +38,9 @@ Cliente deve conectar com:
 ```
 
 ### `passar_turno`
+- Regras de fase:
+  - Avança a `estado.fase` para a próxima fase da sequência: `Ritual de Geração` → `Revelação` → `Manifestação` → `Guerra dos Véus` → `Silêncio Final` → `Ritual de Geração`.
+  - `estado.turno` só troca ao sair de `Silêncio Final` para `Ritual de Geração`.
 - Payload:
   - `sala` (**obrigatório**, `string`)
 - Exemplo:
@@ -46,6 +49,9 @@ Cliente deve conectar com:
 ```
 
 ### `jogar_carta`
+- Regras de fase:
+  - Permitido somente em `Manifestação`.
+  - Fora dessa fase, servidor emite `erro_partida` com `codigo: "ACAO_FASE_INVALIDA"` e não altera o estado.
 - Payload:
   - `sala` (**obrigatório**, `string`)
   - `cartaId` (**obrigatório**, `string`)
@@ -55,6 +61,9 @@ Cliente deve conectar com:
 ```
 
 ### `atacar_fortaleza`
+- Regras de fase:
+  - Permitido somente em `Guerra dos Véus`.
+  - Fora dessa fase, servidor emite `erro_partida` com `codigo: "ACAO_FASE_INVALIDA"` e não altera o estado.
 - Payload:
   - `sala` (**obrigatório**, `string`)
   - `atacantesIds` (**obrigatório**, `string[]`)
@@ -64,6 +73,9 @@ Cliente deve conectar com:
 ```
 
 ### `declarar_ataque`
+- Regras de fase:
+  - Permitido somente em `Guerra dos Véus`.
+  - Fora dessa fase, servidor emite `erro_partida` com `codigo: "ACAO_FASE_INVALIDA"` e não altera o estado.
 - Payload:
   - `sala` (**obrigatório**, `string`)
   - `atacanteId` (**obrigatório**, `string`)
@@ -158,6 +170,7 @@ ou
 - Campos:
   - `protocolVersion`, `motivo`
   - `requestId`, `userId`, `sala`, `matchId` opcionais por contexto
+  - Para erros de fase inválida: `codigo`, `acao`, `faseAtual`, `fasesPermitidas`
 - Exemplo:
 ```json
 {

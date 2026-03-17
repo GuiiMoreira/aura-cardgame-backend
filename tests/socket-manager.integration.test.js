@@ -230,11 +230,26 @@ test('integração socket: buscar_partida -> ações -> fim_de_jogo', async () =
     p1.emit('jogar_carta', { sala, cartaId });
     await waitForEvent(p1, 'estado_atualizado');
 
-    p1.emit('passar_turno', { sala });
-    await waitForEvent(p1, 'estado_atualizado');
+    const avancarFase = async (socket) => {
+      socket.emit('passar_turno', { sala });
+      return waitForEvent(socket, 'estado_atualizado');
+    };
 
-    p2.emit('passar_turno', { sala });
-    await waitForEvent(p2, 'estado_atualizado');
+    await avancarFase(p1); // Guerra dos Véus
+    await avancarFase(p1); // Silêncio Final
+    await avancarFase(p1); // Ritual de Geração (turno p2)
+
+    await avancarFase(p2); // Revelação
+    await avancarFase(p2); // Manifestação
+    await avancarFase(p2); // Guerra dos Véus
+    await avancarFase(p2); // Silêncio Final
+    await avancarFase(p2); // Ritual de Geração (turno p1)
+
+    await avancarFase(p1); // Revelação
+    await avancarFase(p1); // Manifestação
+    const atualizado = await avancarFase(p1); // Guerra dos Véus
+    assert.equal(atualizado.estado.turno, 'p1');
+    assert.equal(atualizado.estado.fase, 'Guerra dos Véus');
 
     p1.emit('atacar_fortaleza', { sala, atacantesIds: [cartaId] });
     const fim = await waitForEvent(p1, 'fim_de_jogo');
@@ -291,7 +306,8 @@ test('integração socket: payload inválido em eventos e servidor continua est�
 
     p1.emit('passar_turno', { sala });
     const atualizado = await waitForEvent(p1, 'estado_atualizado');
-    assert.equal(atualizado.estado.turno, 'p2');
+    assert.equal(atualizado.estado.turno, 'p1');
+    assert.equal(atualizado.estado.fase, 'Guerra dos Véus');
   } finally {
     await encerrar();
   }
@@ -314,7 +330,33 @@ test('integração socket: ação fora do turno não altera estado', async () =>
 
     p1.emit('passar_turno', { sala });
     const atualizado = await waitForEvent(p1, 'estado_atualizado');
-    assert.equal(atualizado.estado.turno, 'p2');
+    assert.equal(atualizado.estado.turno, 'p1');
+    assert.equal(atualizado.estado.fase, 'Guerra dos Véus');
+  } finally {
+    await encerrar();
+  }
+});
+
+
+
+test('integração socket: ação inválida por fase emite erro_partida com contexto', async () => {
+  const { p1, p2, encerrar } = await criarAmbiente();
+
+  try {
+    p1.emit('buscar_partida', { deckId: 'deck_p1' });
+    p2.emit('buscar_partida', { deckId: 'deck_p2' });
+
+    const partida = await waitForEvent(p1, 'partida_encontrada');
+    await waitForEvent(p2, 'partida_encontrada');
+
+    p1.emit('atacar_fortaleza', { sala: partida.sala, atacantesIds: [] });
+    const erro = await waitForEvent(p1, 'erro_partida');
+
+    assert.equal(erro.codigo, 'ACAO_FASE_INVALIDA');
+    assert.equal(erro.acao, 'atacar_fortaleza');
+    assert.equal(erro.faseAtual, 'Manifestação');
+    assert.equal(erro.fasesPermitidas.length, 1);
+    assert.equal(erro.fasesPermitidas[0], 'Guerra dos Véus');
   } finally {
     await encerrar();
   }
