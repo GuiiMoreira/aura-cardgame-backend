@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LobbyView } from './features/lobby/LobbyView';
 import { LoginView } from './features/login/LoginView';
 import { MatchmakingView } from './features/matchmaking/MatchmakingView';
@@ -14,6 +14,13 @@ import {
 import type { ConnectionState, FlowStep, MatchEventsState, MatchState, SessionState } from './types/app-state';
 import { SOCKET_CONTRACT_VERSION } from './contracts/socket-contracts';
 import { API_URL } from './config';
+import {
+  hasFirebaseConfig,
+  loginAnonymously,
+  loginWithEmailPassword,
+  subscribeAuthState,
+  type User,
+} from './services/firebaseAuth';
 
 const INITIAL_CONNECTION: ConnectionState = {
   connected: false,
@@ -21,18 +28,32 @@ const INITIAL_CONNECTION: ConnectionState = {
   reconnectAttempts: 0,
 };
 
+const CAN_USE_MOCK_MODE = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK_MODE === 'true';
+
 export default function App() {
   const [step, setStep] = useState<FlowStep>('login');
-  const [token, setToken] = useState('');
-  const [userId, setUserId] = useState('jogador_local');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authError, setAuthError] = useState<string | undefined>(undefined);
+
   const [deckId, setDeckId] = useState('deck-basico');
-  const [mockMode, setMockMode] = useState(true);
+  const [mockMode, setMockMode] = useState(CAN_USE_MOCK_MODE);
   const [events, setEvents] = useState<MatchEventsState>({});
   const [session, setSession] = useState<SessionState | null>(null);
   const [match, setMatch] = useState<MatchState>({});
   const [connection, setConnection] = useState<ConnectionState>(INITIAL_CONNECTION);
 
   const socketRef = useRef<SocketClientService | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeAuthState((user) => {
+      setAuthUser(user);
+      setAuthError(undefined);
+    });
+
+    return unsubscribe;
+  }, []);
 
   const status = useMemo(() => events.matchmakingStatus?.mensagem, [events.matchmakingStatus]);
 
@@ -111,8 +132,32 @@ export default function App() {
     service.reconectarPartida(match.sala ?? `mock_${newSession.userId}`);
   };
 
-  const handleLogin = () => {
-    const newSession = { token, userId, deckId };
+  const handleEmailPasswordLogin = async () => {
+    try {
+      setAuthError(undefined);
+      await loginWithEmailPassword(email, password);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Falha ao autenticar com e-mail/senha.');
+    }
+  };
+
+  const handleAnonymousLogin = async () => {
+    try {
+      setAuthError(undefined);
+      await loginAnonymously();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'Falha ao autenticar anonimamente.');
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!authUser) {
+      setAuthError('Autentique-se antes de continuar.');
+      return;
+    }
+
+    const idToken = await authUser.getIdToken();
+    const newSession = { token: idToken, userId: authUser.uid, deckId };
     socketRef.current?.disconnect();
 
     const transport = createTransport(newSession);
@@ -178,13 +223,20 @@ export default function App() {
 
       {step === 'login' ? (
         <LoginView
-          token={token}
-          userId={userId}
+          email={email}
+          password={password}
+          isAuthenticated={Boolean(authUser)}
+          userId={authUser?.uid}
+          authError={authError}
           mockMode={mockMode}
-          onTokenChange={setToken}
-          onUserIdChange={setUserId}
+          canUseMockMode={CAN_USE_MOCK_MODE}
+          canUseFirebaseAuth={hasFirebaseConfig}
+          onEmailChange={setEmail}
+          onPasswordChange={setPassword}
           onMockToggle={setMockMode}
-          onSubmit={handleLogin}
+          onEmailPasswordLogin={handleEmailPasswordLogin}
+          onAnonymousLogin={handleAnonymousLogin}
+          onSubmit={() => void handleLogin()}
         />
       ) : null}
 
@@ -199,7 +251,7 @@ export default function App() {
           sala={match.sala}
           estado={match.estado}
           attackSelection={match.attackSelection}
-          userId={session?.userId ?? userId}
+          userId={session?.userId ?? authUser?.uid ?? ''}
           isReconnecting={connection.reconnecting}
           reconnectMessage={connection.reconnectingMessage}
           onPassTurn={handlePassTurn}
@@ -214,7 +266,7 @@ export default function App() {
       {step === 'resultado' ? (
         <ResultadoView
           winnerId={events.fimDeJogo?.vencedor}
-          localUserId={session?.userId ?? userId}
+          localUserId={session?.userId ?? authUser?.uid ?? ''}
           abandonmentDefeat={connection.abandonmentDefeat}
           reason={events.erroPartida?.motivo}
           onBackToLobby={handleBackToLobby}

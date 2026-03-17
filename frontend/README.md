@@ -4,7 +4,7 @@ Frontend para consumir os eventos Socket.IO do backend com fluxo completo de par
 
 ## Módulos implementados
 
-- Login
+- Login (Firebase Auth: e-mail/senha ou anônimo)
 - Lobby / Matchmaking
 - Partida
 - Resultado
@@ -12,6 +12,7 @@ Frontend para consumir os eventos Socket.IO do backend com fluxo completo de par
 ## Camadas principais
 
 - `src/services/socketClient.ts`: encapsula conexão, assinatura de eventos e comandos de jogo.
+- `src/services/firebaseAuth.ts`: integração com Firebase Auth para sessão real.
 - `src/features/partida`: componentes de mão/campo/carta com base para habilidades especiais.
 
 ## Eventos sincronizados na UI
@@ -22,9 +23,24 @@ Frontend para consumir os eventos Socket.IO do backend com fluxo completo de par
 - `erro_partida`
 - reconexão (`disconnect`, `reconnect_attempt`, `reconnect`, `reconnect_failed`)
 
+## Auth Firebase
+
+Configure as variáveis abaixo para login real:
+
+```bash
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_APP_ID=...
+```
+
 ## Modo mock server
 
-Por padrão o app inicia com `mockMode=true`, permitindo desenvolvimento visual sem backend online.
+O mock só pode ser habilitado em desenvolvimento e quando a flag explícita estiver ativa:
+
+```bash
+VITE_ENABLE_MOCK_MODE=true
+```
 
 ## Executar
 
@@ -34,7 +50,7 @@ npm install
 npm run dev
 ```
 
-Para backend online, desative o checkbox "Ativar mock server" na tela de Login e use:
+Para backend online:
 
 ```bash
 VITE_API_URL=http://localhost:3000 npm run dev
