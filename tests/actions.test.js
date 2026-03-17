@@ -1,7 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { declararAtaque, atacarFortaleza, jogarCarta } = require('../game/actions');
+const {
+  declararAtaque,
+  atacarFortaleza,
+  jogarCarta,
+  ativarHabilidadeDaCarta,
+} = require('../game/actions');
 const { TURN_PHASES } = require('../game/turn-phases');
 
 function criarEstadoBase() {
@@ -89,7 +94,6 @@ test('jogarCarta consome recursos e coloca carta exausta no campo', () => {
   assert.equal(estado.campo.p1[0].exaustao, true);
 });
 
-
 test('jogarCarta falha em fase inválida sem mutar estado', () => {
   const estado = criarEstadoBase();
   estado.fase = TURN_PHASES.REVELACAO;
@@ -111,14 +115,60 @@ test('jogarCarta resolve SACRIFICIO em fluxo completo de invocação e mortes', 
     A: 0,
     Força: 6,
     Vida: 5,
-    'Mecânica': 'Sacrifício (5)',
+    Mecânica: 'Sacrifício (5)',
   });
 
   jogarCarta(estado, 'p1', 'fanatico');
 
   assert.equal(estado.campo.p1.length, 0);
-  assert.deepEqual(estado.jogadores.p1.cemiterio.map((c) => c.id), ['fanatico']);
+  assert.deepEqual(
+    estado.jogadores.p1.cemiterio.map((c) => c.id),
+    ['fanatico']
+  );
   assert.equal(estado.jogadores.p1.vida, 100);
   assert.equal(estado.jogadores.p2.vida, 100);
 });
 
+test('ativarHabilidadeDaCarta com ALQUIMIA consome cemitério e aplica efeito', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({
+    id: 'alquimista',
+    Força: 4,
+    Vida: 8,
+    exaustao: false,
+    habilidades: [{ tipo: 'ALQUIMIA', valor: 2 }],
+  });
+  estado.jogadores.p1.vida = 70;
+  estado.jogadores.p1.cemiterio.push({ id: 'm1' }, { id: 'm2' }, { id: 'm3' });
+
+  const ativou = ativarHabilidadeDaCarta(estado, 'p1', 'alquimista', 'ALQUIMIA');
+
+  assert.equal(ativou, true);
+  assert.equal(estado.jogadores.p1.vida, 72);
+  assert.deepEqual(
+    estado.jogadores.p1.cemiterio.map((c) => c.id),
+    ['m3']
+  );
+});
+
+test('ativarHabilidadeDaCarta falha sem cemitério suficiente e não aplica efeito', () => {
+  const estado = criarEstadoBase();
+  estado.campo.p1.push({
+    id: 'alquimista',
+    Força: 4,
+    Vida: 8,
+    exaustao: false,
+    habilidades: [{ tipo: 'ALQUIMIA', valor: 3 }],
+  });
+  estado.jogadores.p1.vida = 70;
+  estado.jogadores.p1.cemiterio.push({ id: 'm1' }, { id: 'm2' });
+
+  const ativou = ativarHabilidadeDaCarta(estado, 'p1', 'alquimista', 'ALQUIMIA');
+
+  assert.equal(ativou, false);
+  assert.equal(estado.jogadores.p1.vida, 70);
+  assert.deepEqual(
+    estado.jogadores.p1.cemiterio.map((c) => c.id),
+    ['m1', 'm2']
+  );
+});

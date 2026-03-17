@@ -1,9 +1,5 @@
-const { runHookForCard } = require('./abilities');
-const {
-  TURN_PHASES,
-  getNextPhase,
-  assertActionAllowedInPhase,
-} = require('./turn-phases');
+const { runHookForCard, getAbilitiesFromCard } = require('./abilities');
+const { TURN_PHASES, getNextPhase, assertActionAllowedInPhase } = require('./turn-phases');
 
 function getOponenteId(estado, userId) {
   return Object.keys(estado.jogadores).find((id) => id !== userId);
@@ -111,6 +107,42 @@ function jogarCarta(estado, userId, cartaId) {
   resolveDeaths(estado, [userId, getOponenteId(estado, userId)]);
 }
 
+function ativarHabilidadeDaCarta(estado, userId, cartaId, habilidadeTipo) {
+  const jogador = estado.jogadores[userId];
+  const carta = estado.campo[userId].find((item) => item.id === cartaId);
+
+  if (!jogador || !carta || typeof habilidadeTipo !== 'string') {
+    return false;
+  }
+
+  const tipoNormalizado = habilidadeTipo.trim().toUpperCase();
+  const habilidade = getAbilitiesFromCard(carta).find((item) => item.tipo === tipoNormalizado);
+
+  if (!habilidade) {
+    return false;
+  }
+
+  const custoCemiterio = habilidade.params.valor;
+  if (!Number.isFinite(custoCemiterio) || custoCemiterio <= 0) {
+    return false;
+  }
+
+  if (jogador.cemiterio.length < custoCemiterio) {
+    return false;
+  }
+
+  jogador.cemiterio.splice(0, custoCemiterio);
+
+  runHookForCard(carta, 'onActivate', {
+    estado,
+    userId,
+    opponentId: getOponenteId(estado, userId),
+  });
+
+  resolveDeaths(estado, [userId, getOponenteId(estado, userId)]);
+  return true;
+}
+
 function atacarFortaleza(estado, userId, atacantesIds) {
   assertActionAllowedInPhase(estado, 'atacar_fortaleza', [TURN_PHASES.GUERRA_DOS_VEUS]);
 
@@ -188,4 +220,5 @@ module.exports = {
   jogarCarta,
   atacarFortaleza,
   declararAtaque,
+  ativarHabilidadeDaCarta,
 };

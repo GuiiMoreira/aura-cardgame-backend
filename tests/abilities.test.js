@@ -96,8 +96,14 @@ test('ULTIMO_SUSPIRO ativa no onDeath com ordem de resolução previsível', () 
 
   assert.equal(estado.jogadores.p2.vida, 96);
   assert.equal(estado.jogadores.p1.vida, 94);
-  assert.deepEqual(estado.jogadores.p1.cemiterio.map((c) => c.id), ['atk']);
-  assert.deepEqual(estado.jogadores.p2.cemiterio.map((c) => c.id), ['def']);
+  assert.deepEqual(
+    estado.jogadores.p1.cemiterio.map((c) => c.id),
+    ['atk']
+  );
+  assert.deepEqual(
+    estado.jogadores.p2.cemiterio.map((c) => c.id),
+    ['def']
+  );
 });
 
 test('REGENERACAO ativa ao iniciar próximo turno após ciclo de fases', () => {
@@ -170,10 +176,22 @@ test('normalização de habilidades aceita params.valor e ordena por prioridade/
     ],
   });
 
-  assert.deepEqual(habilidades.map((h) => h.tipo), ['IMPACTO', 'IMPACTO', 'IMPACTO']);
-  assert.deepEqual(habilidades.map((h) => h.params.valor), [1, 2, 3]);
-  assert.deepEqual(habilidades.map((h) => h.prioridade), [0, 5, 5]);
-  assert.deepEqual(habilidades.map((h) => h.sourceIndex), [0, 1, 2]);
+  assert.deepEqual(
+    habilidades.map((h) => h.tipo),
+    ['IMPACTO', 'IMPACTO', 'IMPACTO']
+  );
+  assert.deepEqual(
+    habilidades.map((h) => h.params.valor),
+    [1, 2, 3]
+  );
+  assert.deepEqual(
+    habilidades.map((h) => h.prioridade),
+    [0, 5, 5]
+  );
+  assert.deepEqual(
+    habilidades.map((h) => h.sourceIndex),
+    [0, 1, 2]
+  );
 });
 
 test('parser textual converte mecânica com fallback e ignora tokens inválidos', () => {
@@ -187,8 +205,6 @@ test('parser textual converte mecânica com fallback e ignora tokens inválidos'
     ]
   );
 });
-
-
 
 test('SACRIFICIO ativa no onSummon e pode enviar a própria carta ao cemitério via resolveDeaths', () => {
   const estado = criarEstadoBase();
@@ -206,7 +222,10 @@ test('SACRIFICIO ativa no onSummon e pode enviar a própria carta ao cemitério 
   jogarCarta(estado, 'p1', 'cultista');
 
   assert.equal(estado.campo.p1.length, 0);
-  assert.deepEqual(estado.jogadores.p1.cemiterio.map((c) => c.id), ['cultista']);
+  assert.deepEqual(
+    estado.jogadores.p1.cemiterio.map((c) => c.id),
+    ['cultista']
+  );
   assert.equal(estado.jogadores.p1.vida, 100);
   assert.equal(estado.jogadores.p2.vida, 100);
 });
@@ -223,9 +242,21 @@ test('parser textual reconhece Sacrifício (X)', () => {
   );
 });
 test('normalizeCardAbilities preenche habilidades a partir de Mecânica', () => {
-  const carta = normalizeCardAbilities({ id: 'c1', 'Mecânica': 'Último Suspiro (3)' });
+  const carta = normalizeCardAbilities({ id: 'c1', Mecânica: 'Último Suspiro (3)' });
 
   assert.equal(carta.habilidades.length, 1);
   assert.equal(carta.habilidades[0].tipo, 'ULTIMO_SUSPIRO');
   assert.equal(carta.habilidades[0].params.valor, 3);
+});
+
+test('parser textual reconhece ALQUIMIA (X)', () => {
+  const habilidades = parseTextualMechanics('Alquimia (2); Impacto (1)');
+
+  assert.deepEqual(
+    habilidades.map((h) => [h.tipo, h.params.valor]),
+    [
+      ['ALQUIMIA', 2],
+      ['IMPACTO', 1],
+    ]
+  );
 });

@@ -1,4 +1,4 @@
-const HOOKS = ['onSummon', 'beforeAttack', 'afterAttack', 'onDeath', 'onTurnStart'];
+const HOOKS = ['onSummon', 'beforeAttack', 'afterAttack', 'onDeath', 'onTurnStart', 'onActivate'];
 
 const abilityRegistry = {
   INSTAVEL: {
@@ -49,18 +49,27 @@ const abilityRegistry = {
       sourceCard.Vida += cura;
     },
   },
+  ALQUIMIA: {
+    onActivate: ({ estado, userId, ability }) => {
+      const cura = ability.params.valor;
+      if (cura <= 0 || !estado?.jogadores?.[userId]) return;
+
+      estado.jogadores[userId].vida += cura;
+    },
+  },
 };
 
 const ALIAS_BY_LABEL = {
   INSTAVEL: 'INSTAVEL',
   IMPACTO: 'IMPACTO',
   SACRIFICIO: 'SACRIFICIO',
-  'SACRIFÍCIO': 'SACRIFICIO',
+  SACRIFÍCIO: 'SACRIFICIO',
   REGENERACAO: 'REGENERACAO',
   'ÚLTIMO SUSPIRO': 'ULTIMO_SUSPIRO',
   'ULTIMO SUSPIRO': 'ULTIMO_SUSPIRO',
   RECARREGAVEL: 'RECARREGAVEL',
-  'RECARREGÁVEL': 'RECARREGAVEL',
+  RECARREGÁVEL: 'RECARREGAVEL',
+  ALQUIMIA: 'ALQUIMIA',
 };
 
 function normalizeAbility(rawAbility, index = 0) {
@@ -127,7 +136,9 @@ function parseTextualMechanics(text) {
 
 function getAbilitiesFromCard(card = {}) {
   if (Array.isArray(card.habilidades) && card.habilidades.length > 0) {
-    return card.habilidades.map((ability, index) => normalizeAbility(ability, index)).filter(Boolean);
+    return card.habilidades
+      .map((ability, index) => normalizeAbility(ability, index))
+      .filter(Boolean);
   }
 
   return parseTextualMechanics(card['Mecânica'] ?? card.Mecanica);
