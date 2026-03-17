@@ -100,3 +100,25 @@ test('jogarCarta falha em fase inválida sem mutar estado', () => {
   assert.equal(estado.jogadores.p1.mao.length, 1);
   assert.equal(estado.campo.p1.length, 0);
 });
+
+test('jogarCarta resolve SACRIFICIO em fluxo completo de invocação e mortes', () => {
+  const estado = criarEstadoBase();
+  estado.jogadores.p1.mao.push({
+    id: 'fanatico',
+    C: 0,
+    M: 0,
+    O: 0,
+    A: 0,
+    Força: 6,
+    Vida: 5,
+    'Mecânica': 'Sacrifício (5)',
+  });
+
+  jogarCarta(estado, 'p1', 'fanatico');
+
+  assert.equal(estado.campo.p1.length, 0);
+  assert.deepEqual(estado.jogadores.p1.cemiterio.map((c) => c.id), ['fanatico']);
+  assert.equal(estado.jogadores.p1.vida, 100);
+  assert.equal(estado.jogadores.p2.vida, 100);
+});
+

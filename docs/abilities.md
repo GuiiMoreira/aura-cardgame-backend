@@ -25,6 +25,37 @@ Cada habilidade pode implementar os hooks abaixo:
    - cada carta morta dispara `onDeath` antes de ir para o cemitério;
    - repete em laços até não haver mais mortes pendentes (permite cadeia de efeitos).
 
+
+## Habilidade: SACRIFICIO
+
+- **Alias aceitos no parser textual**: `SACRIFICIO` e `Sacrifício`.
+- **Hook oficial**: `onSummon`.
+- **Regra oficial**: ao entrar no campo, a carta perde `X` de `Vida` (`Sacrifício (X)`).
+- **Determinismo com `resolveDeaths`**:
+  - a perda de vida acontece imediatamente durante `jogarCarta`;
+  - em seguida, `resolveDeaths` é executado na ordem `[invocador, oponente]`;
+  - se a carta ficar com `Vida <= 0`, ela é enviada ao cemitério no mesmo fluxo da invocação.
+
+### Exemplo de carta e resolução
+
+Carta exemplo:
+
+```js
+{
+  id: 'fanatico_do_veu',
+  Força: 6,
+  Vida: 5,
+  'Mecânica': 'Sacrifício (5)',
+}
+```
+
+Ordem de resolução ao usar `jogarCarta`:
+
+1. carta entra no campo exausta;
+2. `onSummon` de `SACRIFICIO` reduz `Vida` em `5`;
+3. `resolveDeaths` verifica o controlador primeiro;
+4. com `Vida <= 0`, a carta dispara `onDeath` (se existir), depois vai ao cemitério.
+
 ## Conflitos e efeitos encadeados
 
 - Se `beforeAttack` matar uma das cartas, o dano de combate não é aplicado.
