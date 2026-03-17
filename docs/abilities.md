@@ -30,31 +30,46 @@ Cada habilidade pode implementar os hooks abaixo:
 
 - **Alias aceitos no parser textual**: `SACRIFICIO` e `Sacrifício`.
 - **Hook oficial**: `onSummon`.
-- **Regra oficial**: ao entrar no campo, a carta perde `X` de `Vida` (`Sacrifício (X)`).
-- **Determinismo com `resolveDeaths`**:
-  - a perda de vida acontece imediatamente durante `jogarCarta`;
-  - em seguida, `resolveDeaths` é executado na ordem `[invocador, oponente]`;
-  - se a carta ficar com `Vida <= 0`, ela é enviada ao cemitério no mesmo fluxo da invocação.
+- **Regra oficial por variante (`Sacrifício (1|2|3)`)**:
+  - `Sacrifício (1)`: auto-sacrifício (sacrifica apenas o invocador).
+  - `Sacrifício (2)`: sacrifica o invocador e **1 aliado**.
+  - `Sacrifício (3)`: sacrifica o invocador e **2 aliados**.
+- **Fonte da especificação**: `DescricaoMecanica` da carta (ex.: `Sacrifique-se.`, `Sacrifique a si e um aliado.`, `Sacrifique a si e mais dois aliados.`).
 
-### Exemplo de carta e resolução
+### Ordem de resolução no jogo
 
-Carta exemplo:
+1. `jogarCarta` paga custos, remove da mão e coloca a carta no campo exausta;
+2. para `Sacrifício (2|3)`, o cliente informa `sacrificeAllyId`/`sacrificeAllyIds`;
+3. `onSummon` de `SACRIFICIO` marca invocador e aliados de custo com `Vida = 0`;
+4. `resolveDeaths` processa mortes na ordem `[invocador, oponente]`;
+5. cada carta com `Vida <= 0` dispara `onDeath` e só então vai para `cemiterio`.
+
+### Exemplos das variantes
 
 ```js
+// Sacrifício (1)
 {
-  id: 'fanatico_do_veu',
-  Força: 6,
-  Vida: 5,
-  'Mecânica': 'Sacrifício (5)',
+  id: 'cria_do_fim',
+  'Mecânica': 'Sacrifício (1)',
+  DescricaoMecanica: 'Sacrifique-se.',
+}
+
+// Sacrifício (2)
+{
+  id: 'cultista_da_fenda',
+  'Mecânica': 'Sacrifício (2)',
+  DescricaoMecanica: 'Sacrifique a si e um aliado.',
+}
+
+// Sacrifício (3)
+{
+  id: 'lowis',
+  'Mecânica': 'Sacrifício (3)',
+  DescricaoMecanica: 'Sacrifique a si e mais dois aliados.',
 }
 ```
 
-Ordem de resolução ao usar `jogarCarta`:
-
-1. carta entra no campo exausta;
-2. `onSummon` de `SACRIFICIO` reduz `Vida` em `5`;
-3. `resolveDeaths` verifica o controlador primeiro;
-4. com `Vida <= 0`, a carta dispara `onDeath` (se existir), depois vai ao cemitério.
+Se `Sacrifício (2|3)` não receber aliados válidos suficientes no payload da ação, a invocação é cancelada e o estado (mão/campo/recursos) é revertido.
 
 ## Conflitos e efeitos encadeados
 

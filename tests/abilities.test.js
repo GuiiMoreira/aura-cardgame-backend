@@ -7,6 +7,7 @@ const {
   getAbilitiesFromCard,
   parseTextualMechanics,
   normalizeCardAbilities,
+  getSacrificioSpec,
 } = require('../game/abilities');
 const { TURN_PHASES } = require('../game/turn-phases');
 
@@ -434,4 +435,24 @@ test('RESIDUO_AURICO aplica múltiplos limiares e persiste entre turnos', () => 
 
   assert.equal(estado.campo.p1[0].residuosAuricos, 0);
   assert.equal(estado.campo.p1[0].Força, 25);
+});
+
+
+test('getSacrificioSpec usa DescricaoMecanica para distinguir auto e aliado', () => {
+  const auto = getSacrificioSpec(
+    { DescricaoMecanica: 'Sacrifique-se.' },
+    { params: { valor: 1 } }
+  );
+  const comAliado = getSacrificioSpec(
+    { DescricaoMecanica: 'Sacrifique a si e um aliado.' },
+    { params: { valor: 2 } }
+  );
+  const comDoisAliados = getSacrificioSpec(
+    { DescricaoMecanica: 'Sacrifique a si e mais dois aliados.' },
+    { params: { valor: 3 } }
+  );
+
+  assert.deepEqual(auto, { totalSacrificios: 1, aliadosNecessarios: 0 });
+  assert.deepEqual(comAliado, { totalSacrificios: 2, aliadosNecessarios: 1 });
+  assert.deepEqual(comDoisAliados, { totalSacrificios: 3, aliadosNecessarios: 2 });
 });
