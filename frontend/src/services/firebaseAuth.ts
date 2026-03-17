@@ -17,7 +17,7 @@ const firebaseConfig = {
 
 export const hasFirebaseConfig = Object.values(firebaseConfig).every((value) => Boolean(value));
 
-const app = initializeApp(firebaseConfig);
+export const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 
 export { auth };

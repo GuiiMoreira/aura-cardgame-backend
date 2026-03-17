@@ -9,34 +9,31 @@ type Handler<T> = T extends (...args: infer A) => void ? (...args: A) => void : 
 type InternalEvents = 'connect' | 'disconnect' | 'reconnect_attempt' | 'reconnect' | 'reconnect_failed';
 
 export class MockSocketClient {
-  private handlers: Partial<{
-    [K in keyof SocketServerToClientEvents]: Handler<SocketServerToClientEvents[K]>[];
-  }> = {};
-
-  private internalHandlers: Partial<Record<InternalEvents, ((...args: any[]) => void)[]>> = {};
-
+  private handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
+  private internalHandlers: Partial<Record<InternalEvents, ((...args: unknown[]) => void)[]>> = {};
   private listeners: Partial<{
     [K in keyof SocketClientToServerEvents]: Handler<SocketClientToServerEvents[K]>;
   }> = {};
 
   on<K extends keyof SocketServerToClientEvents>(event: K, cb: Handler<SocketServerToClientEvents[K]>): void;
-  on(event: InternalEvents, cb: (...args: any[]) => void): void;
-  on(event: string, cb: (...args: any[]) => void) {
-    if (event in this.handlers) {
-      const typedEvent = event as keyof SocketServerToClientEvents;
-      const current = this.handlers[typedEvent] ?? [];
-      current.push(cb as never);
-      this.handlers[typedEvent] = current;
+  on(event: InternalEvents, cb: (...args: unknown[]) => void): void;
+  on(event: string, cb: (...args: unknown[]) => void) {
+    const isInternalEvent = ['connect', 'disconnect', 'reconnect_attempt', 'reconnect', 'reconnect_failed'].includes(event);
+    if (isInternalEvent) {
+      const internalEvent = event as InternalEvents;
+      const current = this.internalHandlers[internalEvent] ?? [];
+      current.push(cb);
+      this.internalHandlers[internalEvent] = current;
       return;
     }
 
-    const currentInternal = this.internalHandlers[event as InternalEvents] ?? [];
-    currentInternal.push(cb);
-    this.internalHandlers[event as InternalEvents] = currentInternal;
+    const current = this.handlers[event] ?? [];
+    current.push(cb);
+    this.handlers[event] = current;
   }
 
   emit<K extends keyof SocketClientToServerEvents>(event: K, payload: Parameters<SocketClientToServerEvents[K]>[0]) {
-    const listener = this.listeners[event];
+    const listener = this.listeners[event] as ((data: unknown) => void) | undefined;
     listener?.(payload);
   }
 
@@ -46,17 +43,11 @@ export class MockSocketClient {
     this.listeners = {};
   }
 
-  bindServer<K extends keyof SocketClientToServerEvents>(
-    event: K,
-    cb: Handler<SocketClientToServerEvents[K]>
-  ) {
+  bindServer<K extends keyof SocketClientToServerEvents>(event: K, cb: Handler<SocketClientToServerEvents[K]>) {
     this.listeners[event] = cb;
   }
 
-  serverEmit<K extends keyof SocketServerToClientEvents>(
-    event: K,
-    payload: Parameters<SocketServerToClientEvents[K]>[0]
-  ) {
+  serverEmit<K extends keyof SocketServerToClientEvents>(event: K, payload: Parameters<SocketServerToClientEvents[K]>[0]) {
     const handlers = this.handlers[event] ?? [];
     handlers.forEach((handler) => handler(payload));
   }
@@ -92,8 +83,8 @@ export function startMockServer(socket: MockSocketClient, userId: string) {
       mensagem: 'Mock: buscando oponente visual...',
       requestId: 'mock-1',
       userId,
-      sala: null,
-      matchId: null,
+      sala: undefined,
+      matchId: undefined,
     });
 
     setTimeout(() => {

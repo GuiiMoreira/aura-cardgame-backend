@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { CollectionView } from './features/deck-builder/CollectionView';
+import { DeckBuilderView } from './features/deck-builder/DeckBuilderView';
 import { LobbyView } from './features/lobby/LobbyView';
 import { LoginView } from './features/login/LoginView';
 import { MatchmakingView } from './features/matchmaking/MatchmakingView';
@@ -21,6 +23,7 @@ import {
   subscribeAuthState,
   type User,
 } from './services/firebaseAuth';
+import { listCatalogCards, listUserDecks, saveUserDeck, type CatalogCard, type UserDeck } from './services/firestoreData';
 
 const INITIAL_CONNECTION: ConnectionState = {
   connected: false,
@@ -30,6 +33,14 @@ const INITIAL_CONNECTION: ConnectionState = {
 
 const CAN_USE_MOCK_MODE = import.meta.env.DEV && import.meta.env.VITE_ENABLE_MOCK_MODE === 'true';
 
+function mapDeckErrorMessage(motivo?: string) {
+  if (!motivo) return undefined;
+  if (motivo.toLowerCase().includes('baralho inválido')) {
+    return `Seu baralho está inválido para jogar. ${motivo} Abra o deck builder para corrigir (30 cartas, máximo 3 cópias).`;
+  }
+  return undefined;
+}
+
 export default function App() {
   const [step, setStep] = useState<FlowStep>('login');
   const [email, setEmail] = useState('');
@@ -37,7 +48,12 @@ export default function App() {
   const [authUser, setAuthUser] = useState<User | null>(null);
   const [authError, setAuthError] = useState<string | undefined>(undefined);
 
-  const [deckId, setDeckId] = useState('deck-basico');
+  const [deckId, setDeckId] = useState('');
+  const [deckErrorMessage, setDeckErrorMessage] = useState<string | undefined>(undefined);
+  const [decks, setDecks] = useState<UserDeck[]>([]);
+  const [catalogCards, setCatalogCards] = useState<CatalogCard[]>([]);
+  const [selectedDeckForBuilder, setSelectedDeckForBuilder] = useState<UserDeck | undefined>(undefined);
+
   const [mockMode, setMockMode] = useState(CAN_USE_MOCK_MODE);
   const [events, setEvents] = useState<MatchEventsState>({});
   const [session, setSession] = useState<SessionState | null>(null);
@@ -54,6 +70,24 @@ export default function App() {
 
     return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!authUser) {
+      setDecks([]);
+      setCatalogCards([]);
+      setDeckId('');
+      return;
+    }
+
+    const loadFirestoreData = async () => {
+      const [loadedDecks, loadedCatalog] = await Promise.all([listUserDecks(authUser.uid), listCatalogCards()]);
+      setDecks(loadedDecks);
+      setCatalogCards(loadedCatalog);
+      setDeckId((current) => current || loadedDecks[0]?.id || '');
+    };
+
+    void loadFirestoreData();
+  }, [authUser]);
 
   const status = useMemo(() => events.matchmakingStatus?.mensagem, [events.matchmakingStatus]);
 
@@ -121,6 +155,12 @@ export default function App() {
       },
       onErroPartida: (payload) => {
         setEvents((prev) => ({ ...prev, erroPartida: payload }));
+        const deckError = mapDeckErrorMessage(payload.motivo);
+        if (deckError) {
+          setDeckErrorMessage(deckError);
+          setStep('deckbuilder');
+          return;
+        }
         if (payload.motivo.toLowerCase().includes('abandono')) {
           setConnection((prev) => ({ ...prev, abandonmentDefeat: true }));
           setStep('resultado');
@@ -156,12 +196,18 @@ export default function App() {
       return;
     }
 
+    if (!deckId) {
+      setAuthError('Selecione ou crie um baralho antes de continuar.');
+      setStep('deckbuilder');
+      return;
+    }
+
     const idToken = await authUser.getIdToken();
     const newSession = { token: idToken, userId: authUser.uid, deckId };
     socketRef.current?.disconnect();
 
     const transport = createTransport(newSession);
-    const service = new SocketClientService(transport);
+    const service = new SocketClientService(transport as any);
 
     socketRef.current = service;
     setSession(newSession);
@@ -171,7 +217,26 @@ export default function App() {
     setStep('lobby');
   };
 
-  const handleBuscarPartida = () => socketRef.current?.buscarPartida(deckId);
+  const handleBuscarPartida = () => {
+    if (!deckId) {
+      setDeckErrorMessage('Selecione um baralho antes de buscar partida.');
+      return;
+    }
+    setDeckErrorMessage(undefined);
+    socketRef.current?.buscarPartida(deckId);
+  };
+
+  const handleSaveDeck = async (id: string, name: string, cartas: string[]) => {
+    if (!authUser) {
+      throw new Error('Usuário não autenticado.');
+    }
+    await saveUserDeck(authUser.uid, id, cartas, name);
+    const loadedDecks = await listUserDecks(authUser.uid);
+    setDecks(loadedDecks);
+    setDeckId(id);
+    setDeckErrorMessage(undefined);
+    setSelectedDeckForBuilder(loadedDecks.find((deck) => deck.id === id));
+  };
 
   const handlePassTurn = () => {
     if (!match.sala) return;
@@ -241,7 +306,32 @@ export default function App() {
       ) : null}
 
       {step === 'lobby' ? (
-        <LobbyView deckId={deckId} onDeckChange={setDeckId} onBuscarPartida={handleBuscarPartida} />
+        <LobbyView
+          decks={decks}
+          deckId={deckId}
+          deckValidationError={deckErrorMessage}
+          onDeckChange={(value) => {
+            setDeckId(value);
+            setDeckErrorMessage(undefined);
+          }}
+          onBuscarPartida={handleBuscarPartida}
+          onOpenCollection={() => setStep('colecao')}
+          onOpenDeckBuilder={() => {
+            setSelectedDeckForBuilder(decks.find((deck) => deck.id === deckId));
+            setStep('deckbuilder');
+          }}
+        />
+      ) : null}
+
+      {step === 'colecao' ? <CollectionView cards={catalogCards} onBack={() => setStep('lobby')} /> : null}
+
+      {step === 'deckbuilder' ? (
+        <DeckBuilderView
+          cards={catalogCards}
+          deck={selectedDeckForBuilder}
+          onBack={() => setStep('lobby')}
+          onSave={handleSaveDeck}
+        />
       ) : null}
 
       {step === 'matchmaking' ? <MatchmakingView status={status} /> : null}

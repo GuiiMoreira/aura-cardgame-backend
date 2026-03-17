@@ -6,6 +6,7 @@ Frontend para consumir os eventos Socket.IO do backend com fluxo completo de par
 
 - Login (Firebase Auth: e-mail/senha ou anônimo)
 - Lobby / Matchmaking
+- Coleção + Deck Builder (persistência de baralhos em Firestore)
 - Partida
 - Resultado
 
@@ -55,3 +56,11 @@ Para backend online:
 ```bash
 VITE_API_URL=http://localhost:3000 npm run dev
 ```
+
+
+## Deck builder e coleção
+
+- Catálogo carregado de `cartas_mestras`.
+- Baralhos em `usuarios/{userId}/baralhos/{deckId}` com campo `cartas`.
+- Validação local: exatamente 30 cartas e no máximo 3 cópias por ID.
+- Lobby exibe seletor de baralhos salvos (sem input livre de `deckId`).
