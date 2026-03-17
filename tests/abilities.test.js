@@ -188,6 +188,40 @@ test('parser textual converte mecânica com fallback e ignora tokens inválidos'
   );
 });
 
+
+
+test('SACRIFICIO ativa no onSummon e pode enviar a própria carta ao cemitério via resolveDeaths', () => {
+  const estado = criarEstadoBase();
+  estado.jogadores.p1.mao.push({
+    id: 'cultista',
+    C: 0,
+    M: 0,
+    O: 0,
+    A: 0,
+    Força: 3,
+    Vida: 2,
+    habilidades: [{ tipo: 'SACRIFICIO', valor: 2 }],
+  });
+
+  jogarCarta(estado, 'p1', 'cultista');
+
+  assert.equal(estado.campo.p1.length, 0);
+  assert.deepEqual(estado.jogadores.p1.cemiterio.map((c) => c.id), ['cultista']);
+  assert.equal(estado.jogadores.p1.vida, 100);
+  assert.equal(estado.jogadores.p2.vida, 100);
+});
+
+test('parser textual reconhece Sacrifício (X)', () => {
+  const habilidades = parseTextualMechanics('Sacrifício (4); Impacto (1)');
+
+  assert.deepEqual(
+    habilidades.map((h) => [h.tipo, h.params.valor]),
+    [
+      ['SACRIFICIO', 4],
+      ['IMPACTO', 1],
+    ]
+  );
+});
 test('normalizeCardAbilities preenche habilidades a partir de Mecânica', () => {
   const carta = normalizeCardAbilities({ id: 'c1', 'Mecânica': 'Último Suspiro (3)' });
 

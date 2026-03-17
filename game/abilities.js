@@ -25,6 +25,14 @@ const abilityRegistry = {
       estado.jogadores[opponentId].vida -= dano;
     },
   },
+  SACRIFICIO: {
+    onSummon: ({ sourceCard, ability }) => {
+      const perdaVida = ability.params.valor;
+      if (perdaVida <= 0 || !sourceCard) return;
+
+      sourceCard.Vida -= perdaVida;
+    },
+  },
   ULTIMO_SUSPIRO: {
     onDeath: ({ estado, opponentId, ability }) => {
       const dano = ability.params.valor;
@@ -46,6 +54,8 @@ const abilityRegistry = {
 const ALIAS_BY_LABEL = {
   INSTAVEL: 'INSTAVEL',
   IMPACTO: 'IMPACTO',
+  SACRIFICIO: 'SACRIFICIO',
+  'SACRIFÍCIO': 'SACRIFICIO',
   REGENERACAO: 'REGENERACAO',
   'ÚLTIMO SUSPIRO': 'ULTIMO_SUSPIRO',
   'ULTIMO SUSPIRO': 'ULTIMO_SUSPIRO',
