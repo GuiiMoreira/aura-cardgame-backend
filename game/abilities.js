@@ -1,3 +1,5 @@
+const { logger } = require('../logger');
+
 const HOOKS = [
   'onSummon',
   'beforeAttack',
@@ -200,6 +202,18 @@ const ALIAS_BY_LABEL = {
   'RESÍDUO ÁURICO': 'RESIDUO_AURICO',
 };
 
+const ALIAS_BY_NORMALIZED_LABEL = Object.entries(ALIAS_BY_LABEL).reduce((acc, [label, alias]) => {
+  acc[normalizeAbilityLabel(label)] = alias;
+  return acc;
+}, {});
+
+function normalizeAbilityLabel(label) {
+  return normalizeText(label)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function normalizeAbility(rawAbility, index = 0) {
   if (!rawAbility || typeof rawAbility !== 'object') {
     return null;
@@ -237,18 +251,25 @@ function parseTextualMechanics(text) {
 
   return blocos
     .map((bloco, sourceIndex) => {
-      const match = bloco.match(/^([\p{L}\s_]+?)(?:\s*\(([-+]?\d+)\))?$/u);
+      const match = bloco.match(/^([\p{L}\s_-]+?)(?:\s*\(([-+]?\d+)\)|\s+([-+]?\d+))?$/u);
       if (!match) {
+        logger.warn('Mecânica textual inválida ignorada', { bloco });
         return null;
       }
 
-      const rawLabel = match[1].trim().replace(/\s+/g, ' ').toUpperCase();
-      const tipo = ALIAS_BY_LABEL[rawLabel];
+      const normalizedLabel = normalizeAbilityLabel(match[1]);
+      const tipo = ALIAS_BY_NORMALIZED_LABEL[normalizedLabel];
       if (!tipo) {
+        logger.warn('Mecânica desconhecida ignorada', {
+          bloco,
+          mecanica: match[1].trim(),
+          mecanicaNormalizada: normalizedLabel,
+        });
         return null;
       }
 
-      const valor = match[2] ? Number(match[2]) : 0;
+      const rawValor = match[2] ?? match[3] ?? 0;
+      const valor = Number(rawValor);
 
       return normalizeAbility(
         {
